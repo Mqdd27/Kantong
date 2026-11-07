@@ -1,0 +1,14 @@
+services:
+  money:
+    build: .
+    image: money-manager
+    restart: unless-stopped
+    mem_limit: 64m
+    ports:
+      - "127.0.0.1:${HOST_PORT:-8080}:8080"
+    env_file: .env
+    volumes:
+      - money-data:/data
+
+volumes:
+  money-data:
