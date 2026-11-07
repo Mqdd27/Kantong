@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte'
-  import { s, fmtNum, CURRENCIES, jakartaLocal, createTx, updateTx, deleteTx } from './lib/store.svelte.js'
+  import { s, fmtNum, CURRENCIES, jakartaLocal, createTx, updateTx, deleteTx, addRule } from './lib/store.svelte.js'
 
   /** tx = undefined → add, otherwise edit */
   let { tx, onclose } = $props()
@@ -17,6 +17,8 @@
   let when = $state(tx ? jakartaLocal(new Date(tx.occurred_at)) : jakartaLocal())
 
   const cats = $derived(s.categories.filter((c) => c.type === type))
+  const corrected = $derived(tx && merchant.trim() && (category !== tx.category || type !== tx.type))
+  let always = $state(false)
   const amount = $derived(Number(amountText.replace(/\D/g, '')))
 
   $effect(() => {
@@ -36,6 +38,7 @@
     const fields = { occurred_at: when + ':00+07:00', type, category, merchant, note, currency }
     if (foreign) fields.orig_amount = Number(orig)
     if (amount) fields.amount = amount // foreign + empty IDR: server converts at that day's rate
+    if (corrected && always) addRule(merchant, type, category)
     if (tx) updateTx(tx.id, { ...fields, needs_review: false })
     else createTx({ ...fields, account: '', source: 'manual' })
     dialog.close()
@@ -86,6 +89,9 @@
     <label>Merchant
       <input bind:value={merchant} autocomplete="off" />
     </label>
+    {#if corrected}
+      <label class="check"><input type="checkbox" bind:checked={always} /> Selalu kategorikan “{merchant.trim()}” sebagai {category}</label>
+    {/if}
     <label>Catatan
       <input bind:value={note} autocomplete="off" />
     </label>
@@ -136,6 +142,18 @@
     gap: 4px;
     font-size: 13px;
     color: var(--muted);
+  }
+  .check {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    color: var(--text);
+    font-size: 14px;
+  }
+  .check input {
+    width: 20px;
+    height: 20px;
+    margin: 0;
   }
   .amt {
     display: grid;

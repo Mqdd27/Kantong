@@ -251,3 +251,52 @@ func TestBudgetRecurringSearch(t *testing.T) {
 		t.Fatalf("search: %+v", found)
 	}
 }
+
+func TestRulesNotifyBackup(t *testing.T) {
+	got := make(chan string, 4)
+	tg := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.ParseForm()
+		got <- r.URL.Path + "|" + r.Form.Get("chat_id") + "|" + r.Form.Get("text")
+	}))
+	defer tg.Close()
+	dir := t.TempDir()
+	a, err := newApp(config{dbPath: filepath.Join(dir, "t.db"), apiToken: token, appPassword: "pw",
+		sessionSecret: strings.Repeat("s", 32), tgAPI: tg.URL, tgToken: "TOK", tgChat: "42"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(a.routes())
+	defer func() { srv.Close(); a.db.Close() }()
+
+	// a newer rule for the same pattern replaces the old one
+	call(t, srv, "POST", "/api/rules", `{"pattern":"indomaret","type":"out","category":"Makan"}`, nil)
+	call(t, srv, "POST", "/api/rules", `{"pattern":"INDOMARET","type":"out","category":"Belanja"}`, nil)
+	var rules []Rule
+	if call(t, srv, "GET", "/api/rules", "", &rules); len(rules) != 1 {
+		t.Fatalf("rules = %+v", rules)
+	}
+	var tx Tx
+	body := strings.Replace(emailTx, `"confidence":0.92`, `"confidence":0.3`, 1)
+	if code := call(t, srv, "POST", "/api/transactions", body, &tx); code != 201 || tx.Category != "Belanja" || tx.NeedsReview {
+		t.Fatalf("rule not applied: %d %+v", code, tx)
+	}
+	if m := <-got; m != "/botTOK/sendMessage|42|Keluar Rp25.000 · Belanja · Indomaret" {
+		t.Fatalf("telegram = %q", m)
+	}
+	// manual transactions don't notify and keep their category
+	call(t, srv, "POST", "/api/transactions", `{"amount":1000,"type":"out","category":"Jajan","merchant":"Indomaret","source":"manual"}`, &tx)
+	if tx.Category != "Jajan" || len(got) != 0 {
+		t.Fatalf("manual tx changed/notified: %+v", tx)
+	}
+
+	day := time.Date(2026, 1, 1, 3, 0, 0, 0, wib)
+	for i := range 16 {
+		if err := a.backup(day.AddDate(0, 0, i), 14); err != nil {
+			t.Fatal(err)
+		}
+	}
+	files, _ := filepath.Glob(filepath.Join(dir, "backups", "money-*.db"))
+	if len(files) != 14 || !strings.HasSuffix(files[0], "money-2026-01-03.db") {
+		t.Fatalf("backups = %v", files)
+	}
+}

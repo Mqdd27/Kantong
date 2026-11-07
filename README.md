@@ -23,7 +23,9 @@ Satu binary Go (API + SQLite + SSE + PWA Svelte yang di-embed), image Docker ±2
 - **Aset & portofolio**: rekening, valas, saham (total), obligasi, SBN, reksa dana, emas, kripto. Ada total kekayaan dalam IDR, alokasi per jenis, untung/rugi vs modal, dan target tabungan.
 - **Order investasi dari email**: konfirmasi pembelian dicatat *pending*, lalu email berhasil/gagal menyelesaikannya dan meng-update saldo aset.
 - **Analitik**: 6 bulan masuk vs keluar, tingkat tabungan, dan kategori bulan ini dibanding rata-ratanya.
-- **Review**: transaksi hasil parsing email yang kurang yakin ditandai untuk dicek sekali tap.
+- **Review & aturan**: transaksi hasil parsing email yang kurang yakin ditandai untuk dicek sekali tap. Koreksi kategori bisa disimpan jadi aturan ("selalu kategorikan Gojek sebagai Transport"), dan email berikutnya dari merchant itu langsung masuk dengan kategori yang benar.
+- **Notifikasi Telegram**: setiap transaksi baru dari email dikirim ke Telegram, misalnya `Keluar Rp25.000 · Jajan · Indomaret (perlu review)`.
+- **Backup harian**: salinan database tiap jam 03:00 WIB, 14 hari terakhir disimpan.
 - **Realtime**: transaksi baru dari agent langsung muncul di semua perangkat (SSE).
 - **Tampilan**: layout terpisah untuk desktop dan mobile, mengikuti dark mode sistem, dan bisa di-install sebagai PWA.
 
@@ -66,6 +68,7 @@ curl http://127.0.0.1:8080/healthz   # -> ok
 | `SESSION_SECRET` | – | Minimal 32 karakter, untuk tanda tangan cookie sesi |
 | `HOST_BIND` / `HOST_PORT` | `127.0.0.1` / `8080` | Alamat & port yang di-publish compose |
 | `COOKIE_SECURE` | `true` | Set `false` hanya kalau diakses lewat HTTP biasa (tanpa HTTPS, PWA nggak bisa di-install) |
+| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | – | Notifikasi transaksi dari email; kosong = mati |
 | `FX_URL` | `https://api.frankfurter.dev` | Sumber kurs |
 | `DB_PATH` / `PORT` | `/data/money.db` / `8080` | Di dalam container |
 
@@ -90,7 +93,8 @@ Semua endpoint `/api/*` butuh `Authorization: Bearer $API_TOKEN` atau cookie ses
 | `GET/POST /api/transactions`, `PATCH/DELETE /api/transactions/{id}` | Transaksi (`?month=YYYY-MM` atau `?q=cari`) |
 | `POST /api/source-refs/check` | Message-ID mana yang belum tercatat |
 | `GET /api/summary?month=` | Total masuk/keluar per kategori |
-| `GET /api/categories`, `GET/POST/DELETE /api/rules` | Kategori & aturan merchant → kategori |
+| `GET /api/categories` | Kategori |
+| `GET/POST /api/rules`, `DELETE /api/rules/{id}` | Aturan merchant → kategori. Dicek otomatis untuk setiap transaksi `source=email` (cocok kalau merchant mengandung `pattern`, tanpa beda huruf besar/kecil; pattern terpanjang menang). POST dengan pattern yang sama menimpa aturan lama |
 | `GET/PUT /api/budget` | Budget bulan ini vs pengeluaran + tagihan mendatang |
 | `GET/POST/PATCH/DELETE /api/recurring`, `POST /api/recurring/{id}/advance` | Transaksi berulang (`?skip=1` untuk lewati) |
 | `GET/POST/PATCH/DELETE /api/assets`, `GET /api/assets/history` | Aset, total kekayaan, riwayat harian |
@@ -120,11 +124,22 @@ curl -N -H "$AUTH" $API/api/events   # biarin kebuka, lihat event masuk
 
 ## Backup
 
-Seluruh data ada di satu file SQLite di volume `money-data`. Image-nya distroless (nggak ada shell), jadi backup dijalankan dari container sementara, tanpa perlu stop app:
+App membuat backup sendiri tiap hari jam 03:00 WIB (dan saat start kalau backup hari itu belum ada) ke `/data/backups/money-YYYY-MM-DD.db` di volume, dengan 14 file terakhir disimpan. Backup dibuat pakai `VACUUM INTO`, jadi app nggak perlu di-stop.
+
+Salin ke Mac (jalankan dari Mac):
 
 ```sh
-docker run --rm -v kantong_money-data:/data -v "$PWD":/out alpine \
-  sh -c 'apk add -q sqlite && sqlite3 /data/money.db "VACUUM INTO \"/out/money-$(date +%F).db\""'
+mkdir -p ~/Backups/kantong
+ssh user@server "docker cp kantong-money-1:/data/backups -" | tar -x -C ~/Backups/kantong
 ```
 
-Restore: stop container, ganti `money.db` di volume dengan file backup, hapus `money.db-wal` dan `money.db-shm`, lalu start lagi.
+Supaya berkala, tambahkan baris itu ke `crontab -e` di Mac, misalnya `0 9 * * * ssh ... | tar ...`.
+
+Restore (di server; ganti tanggalnya):
+
+```sh
+docker compose stop
+docker run --rm -v kantong_money-data:/data alpine sh -c \
+  'cp /data/backups/money-2026-11-08.db /data/money.db && rm -f /data/money.db-wal /data/money.db-shm && chown 65532:65532 /data/money.db'
+docker compose start
+```

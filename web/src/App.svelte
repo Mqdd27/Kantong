@@ -8,6 +8,7 @@
   import Assets from './Assets.svelte'
   import Budget from './Budget.svelte'
   import Analytics from './Analytics.svelte'
+  import Rules from './Rules.svelte'
   import TxSheet from './TxSheet.svelte'
 
   let route = $state(location.hash.slice(1) || '/')
@@ -30,13 +31,14 @@
     ['/analytics', 'Analitik'],
     ['/assets', 'Aset'],
     ['/review', 'Review'], // mobile reaches it through the banner on Beranda/Transaksi
+    ['/rules', 'Aturan'], // mobile: link on Transaksi
   ]
 </script>
 
 {#if !s.authed}
   <Login />
 {:else}
-  <main class:narrow={route === '/tx' || route === '/review'}>
+  <main class:narrow={route === '/tx' || route === '/review' || route === '/rules'}>
     {#if reviewCount && (route === '/' || route === '/tx')}
       <a class="banner" href="#/review">⚠︎ {reviewCount} transaksi perlu direview ›</a>
     {/if}
@@ -50,12 +52,14 @@
       <Budget />
     {:else if route === '/analytics'}
       <Analytics />
+    {:else if route === '/rules'}
+      <Rules />
     {:else}
       <Home {open} />
     {/if}
   </main>
 
-  {#if route !== '/assets' && route !== '/analytics'}
+  {#if route !== '/assets' && route !== '/analytics' && route !== '/rules'}
     <button class="fab" aria-label="Tambah transaksi" onclick={() => (sheet = {})}>+</button>
   {/if}
 
@@ -63,7 +67,7 @@
     <span class="brand">Kantong</span>
     <button class="primary new" onclick={() => (sheet = {})}>+ Transaksi</button>
     {#each tabs as [href, label]}
-      <a href={'#' + href} class:active={route === href} class:desk={href === '/review'}>
+      <a href={'#' + href} class:active={route === href} class:desk={href === '/review' || href === '/rules'}>
         {label}
         {#if href === '/review' && reviewCount}<span class="count">{reviewCount}</span>{/if}
       </a>

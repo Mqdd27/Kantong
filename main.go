@@ -32,7 +32,8 @@ var wib = time.FixedZone("WIB", 7*3600)
 
 type config struct {
 	port, dbPath, apiToken, appPassword, sessionSecret, fxURL string
-	insecureCookie                                            bool // COOKIE_SECURE=false: allow login over plain HTTP (no PWA install/push then)
+	tgAPI, tgToken, tgChat                                    string // Telegram notifications; off when token/chat empty
+	insecureCookie                                            bool   // COOKIE_SECURE=false: allow login over plain HTTP (no PWA install/push then)
 }
 
 type app struct {
@@ -51,6 +52,9 @@ func main() {
 		sessionSecret:  os.Getenv("SESSION_SECRET"),
 		insecureCookie: os.Getenv("COOKIE_SECURE") == "false",
 		fxURL:          env("FX_URL", "https://api.frankfurter.dev"),
+		tgAPI:          env("TELEGRAM_API", "https://api.telegram.org"),
+		tgToken:        os.Getenv("TELEGRAM_BOT_TOKEN"),
+		tgChat:         os.Getenv("TELEGRAM_CHAT_ID"),
 	}
 	if cfg.apiToken == "" || cfg.appPassword == "" || len(cfg.sessionSecret) < 32 {
 		slog.Error("API_TOKEN, APP_PASSWORD and SESSION_SECRET (>=32 chars) are required")
@@ -72,6 +76,7 @@ func main() {
 		BaseContext:       func(_ net.Listener) context.Context { return ctx }, // cancels SSE streams on shutdown
 	}
 	go a.snapshotLoop(ctx)
+	go a.backupLoop(ctx)
 	go func() {
 		<-ctx.Done()
 		sctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

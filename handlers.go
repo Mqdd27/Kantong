@@ -203,7 +203,13 @@ func (a *app) getTx(id int64) (Tx, error) {
 
 func (a *app) createTx(w http.ResponseWriter, r *http.Request) {
 	var t Tx
-	if !decode(w, r, &t) || !a.validateTx(w, r, &t) {
+	if !decode(w, r, &t) {
+		return
+	}
+	if t.Source == "email" { // rules win even if the agent forgot to apply them
+		a.applyRule(&t)
+	}
+	if !a.validateTx(w, r, &t) {
 		return
 	}
 	if err := a.insertTx(&t); err != nil {
@@ -215,6 +221,9 @@ func (a *app) createTx(w http.ResponseWriter, r *http.Request) {
 		}
 		a.fail(w, err)
 		return
+	}
+	if t.Source == "email" {
+		a.notify(t)
 	}
 	writeJSON(w, http.StatusCreated, t) // includes id, plus the computed IDR amount
 }
@@ -472,6 +481,8 @@ func (a *app) createRule(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "unknown type/category, see /api/categories")
 		return
 	}
+	// one rule per pattern: a newer correction replaces the old one
+	a.db.Exec(`DELETE FROM rules WHERE lower(pattern) = lower(?)`, ru.Pattern)
 	res, err := a.db.Exec(`INSERT INTO rules (pattern, match, type, category) VALUES (?, ?, ?, ?)`,
 		ru.Pattern, ru.Match, ru.Type, ru.Category)
 	if err != nil {

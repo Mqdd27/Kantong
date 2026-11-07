@@ -217,3 +217,6 @@ export async function act(path, method, body) {
 }
 
 export const setBudget = (category, amount) => act('/budget', 'PUT', { month: s.month, category, amount })
+
+// ---- rules ----
+export const addRule = (merchant, type, category) => act('/rules', 'POST', { pattern: merchant.trim(), type, category })
