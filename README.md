@@ -53,6 +53,15 @@ Email bank/broker ──▶ mailbox (IMAP, read-only)
 - `source_ref` (Message-ID) bersifat unik, sehingga email yang sama nggak pernah tercatat dua kali.
 - Transaksi dengan `confidence < 0.7` otomatis masuk antrian Review.
 
+Skill agent-nya ([Hermes](https://github.com/NousResearch/hermes-agent)) ada di [`hermes/finance-email`](hermes/finance-email): `SKILL.md`, aturan parsing per bank, dan script fetch/post (Python stdlib). Pasang:
+
+```sh
+cp -R hermes/finance-email ~/.hermes/skills/
+cp hermes/finance-email-fetch.py ~/.hermes/scripts/   # cron cuma boleh jalanin script di sini
+# isi env di ~/.hermes/.env, lihat bagian Config di SKILL.md
+hermes cron create --name finance-email --script finance-email-fetch.py --skill finance-email --deliver telegram 10m
+```
+
 ## Jalanin
 
 ```sh
