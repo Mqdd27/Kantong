@@ -166,6 +166,11 @@ func spa() http.Handler {
 	files := http.FileServerFS(dist)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p := strings.TrimPrefix(path.Clean(r.URL.Path), "/")
+		if strings.HasPrefix(p, "assets/") { // content-hashed by Vite
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		} else {
+			w.Header().Set("Cache-Control", "no-cache") // index.html, sw.js, manifest must revalidate
+		}
 		if p != "" {
 			if _, err := fs.Stat(dist, p); err != nil {
 				http.ServeFileFS(w, r, dist, "index.html")

@@ -2,3 +2,7 @@
 *.db-*
 .env
 /money-manager
+web/node_modules/
+# build output; .gitkeep keeps the go:embed pattern valid on a fresh clone
+web/dist/*
+!web/dist/.gitkeep
