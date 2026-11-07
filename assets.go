@@ -57,10 +57,8 @@ func scanOrder(s scanner) (Order, error) {
 	return o, err
 }
 
-func (a *app) assetsChanged() {
-	go a.portfolio(context.Background()) // keep today's snapshot current
-	a.hub.publish("assets.changed", map[string]any{})
-}
+// Clients refetch /api/assets on this event, which also refreshes today's snapshot.
+func (a *app) assetsChanged() { a.hub.publish("assets.changed", map[string]any{}) }
 
 func validAsset(w http.ResponseWriter, x *Asset) bool {
 	x.Name, x.Note = strings.TrimSpace(x.Name), strings.TrimSpace(x.Note)
