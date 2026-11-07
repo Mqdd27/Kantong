@@ -32,6 +32,7 @@ var wib = time.FixedZone("WIB", 7*3600)
 
 type config struct {
 	port, dbPath, apiToken, appPassword, sessionSecret string
+	insecureCookie                                     bool // COOKIE_SECURE=false: allow login over plain HTTP (no PWA install/push then)
 }
 
 type app struct {
@@ -43,11 +44,12 @@ type app struct {
 func main() {
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, nil)))
 	cfg := config{
-		port:          env("PORT", "8080"),
-		dbPath:        env("DB_PATH", "/data/money.db"),
-		apiToken:      os.Getenv("API_TOKEN"),
-		appPassword:   os.Getenv("APP_PASSWORD"),
-		sessionSecret: os.Getenv("SESSION_SECRET"),
+		port:           env("PORT", "8080"),
+		dbPath:         env("DB_PATH", "/data/money.db"),
+		apiToken:       os.Getenv("API_TOKEN"),
+		appPassword:    os.Getenv("APP_PASSWORD"),
+		sessionSecret:  os.Getenv("SESSION_SECRET"),
+		insecureCookie: os.Getenv("COOKIE_SECURE") == "false",
 	}
 	if cfg.apiToken == "" || cfg.appPassword == "" || len(cfg.sessionSecret) < 32 {
 		slog.Error("API_TOKEN, APP_PASSWORD and SESSION_SECRET (>=32 chars) are required")
