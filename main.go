@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"mime"
 	"net"
 	"net/http"
 	"os"
@@ -162,6 +163,7 @@ func (a *app) routes() http.Handler {
 
 // spa serves the embedded PWA, falling back to index.html for client-side routes.
 func spa() http.Handler {
+	mime.AddExtensionType(".webmanifest", "application/manifest+json")
 	dist, _ := fs.Sub(webFS, "web/dist")
 	files := http.FileServerFS(dist)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
