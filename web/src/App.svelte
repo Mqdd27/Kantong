@@ -5,6 +5,7 @@
   import Home from './Home.svelte'
   import TxList from './TxList.svelte'
   import Review from './Review.svelte'
+  import Assets from './Assets.svelte'
   import TxSheet from './TxSheet.svelte'
 
   let route = $state(location.hash.slice(1) || '/')
@@ -24,6 +25,7 @@
     ['/', 'Beranda'],
     ['/tx', 'Transaksi'],
     ['/review', 'Review'],
+    ['/assets', 'Aset'],
   ]
 </script>
 
@@ -35,12 +37,16 @@
       <TxList {open} />
     {:else if route === '/review'}
       <Review {open} />
+    {:else if route === '/assets'}
+      <Assets />
     {:else}
       <Home {open} />
     {/if}
   </main>
 
-  <button class="fab" aria-label="Tambah transaksi" onclick={() => (sheet = {})}>+</button>
+  {#if route !== '/assets'}
+    <button class="fab" aria-label="Tambah transaksi" onclick={() => (sheet = {})}>+</button>
+  {/if}
 
   <nav>
     {#each tabs as [href, label]}

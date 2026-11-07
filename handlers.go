@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -25,16 +26,18 @@ type Tx struct {
 	SourceRef   *string  `json:"source_ref"`
 	Confidence  *float64 `json:"confidence"`
 	NeedsReview bool     `json:"needs_review"`
+	Currency    string   `json:"currency"`    // default IDR
+	OrigAmount  *float64 `json:"orig_amount"` // amount in Currency when not IDR; Amount is then its IDR value
 }
 
-const txCols = `id, occurred_at, amount, type, category, merchant, account, note, source, source_ref, confidence, needs_review`
+const txCols = `id, occurred_at, amount, type, category, merchant, account, note, source, source_ref, confidence, needs_review, currency, orig_amount`
 
 type scanner interface{ Scan(...any) error }
 
 func scanTx(s scanner) (Tx, error) {
 	var t Tx
 	err := s.Scan(&t.ID, &t.OccurredAt, &t.Amount, &t.Type, &t.Category, &t.Merchant, &t.Account,
-		&t.Note, &t.Source, &t.SourceRef, &t.Confidence, &t.NeedsReview)
+		&t.Note, &t.Source, &t.SourceRef, &t.Confidence, &t.NeedsReview, &t.Currency, &t.OrigAmount)
 	return t, err
 }
 
@@ -121,7 +124,7 @@ func (a *app) categories() ([]Category, error) {
 }
 
 // validateTx normalizes and checks t; it writes the error response and returns false on failure.
-func (a *app) validateTx(w http.ResponseWriter, t *Tx) bool {
+func (a *app) validateTx(w http.ResponseWriter, r *http.Request, t *Tx) bool {
 	if t.OccurredAt == "" {
 		t.OccurredAt = time.Now().In(wib).Format(time.RFC3339)
 	}
@@ -132,6 +135,28 @@ func (a *app) validateTx(w http.ResponseWriter, t *Tx) bool {
 	}
 	t.OccurredAt = ts.In(wib).Format(time.RFC3339)
 	t.Merchant, t.Account, t.Note = strings.TrimSpace(t.Merchant), strings.TrimSpace(t.Account), strings.TrimSpace(t.Note)
+
+	var ok bool
+	if t.Currency, ok = normCurrency(t.Currency); !ok {
+		writeErr(w, http.StatusBadRequest, "currency must be a 3-letter ISO code, e.g. USD")
+		return false
+	}
+	if t.Currency == "IDR" {
+		t.OrigAmount = nil
+	} else {
+		if t.OrigAmount == nil || *t.OrigAmount <= 0 {
+			writeErr(w, http.StatusBadRequest, "orig_amount (amount in currency) is required when currency is not IDR")
+			return false
+		}
+		if t.Amount <= 0 { // no charged IDR amount given: convert at that day's rate
+			rate, err := a.idrRate(r.Context(), t.Currency, t.OccurredAt[:10])
+			if err != nil {
+				writeErr(w, http.StatusBadRequest, err.Error())
+				return false
+			}
+			t.Amount = int64(math.Round(*t.OrigAmount * rate))
+		}
+	}
 
 	var msg string
 	switch {
@@ -175,13 +200,14 @@ func (a *app) getTx(id int64) (Tx, error) {
 
 func (a *app) createTx(w http.ResponseWriter, r *http.Request) {
 	var t Tx
-	if !decode(w, r, &t) || !a.validateTx(w, &t) {
+	if !decode(w, r, &t) || !a.validateTx(w, r, &t) {
 		return
 	}
 	res, err := a.db.Exec(`INSERT INTO transactions
-		(occurred_at, amount, type, category, merchant, account, note, source, source_ref, confidence, needs_review)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		t.OccurredAt, t.Amount, t.Type, t.Category, t.Merchant, t.Account, t.Note, t.Source, t.SourceRef, t.Confidence, t.NeedsReview)
+		(occurred_at, amount, type, category, merchant, account, note, source, source_ref, confidence, needs_review, currency, orig_amount)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		t.OccurredAt, t.Amount, t.Type, t.Category, t.Merchant, t.Account, t.Note, t.Source, t.SourceRef, t.Confidence, t.NeedsReview,
+		t.Currency, t.OrigAmount)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE constraint failed: transactions.source_ref") {
 			var id int64
@@ -194,7 +220,7 @@ func (a *app) createTx(w http.ResponseWriter, r *http.Request) {
 	}
 	t.ID, _ = res.LastInsertId()
 	a.hub.publish("transaction.created", t)
-	writeJSON(w, http.StatusCreated, map[string]any{"id": t.ID})
+	writeJSON(w, http.StatusCreated, t) // includes id, plus the computed IDR amount
 }
 
 func (a *app) listTx(w http.ResponseWriter, r *http.Request) {
@@ -228,14 +254,16 @@ func (a *app) patchTx(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var p struct {
-		OccurredAt  *string `json:"occurred_at"`
-		Amount      *int64  `json:"amount"`
-		Type        *string `json:"type"`
-		Category    *string `json:"category"`
-		Merchant    *string `json:"merchant"`
-		Account     *string `json:"account"`
-		Note        *string `json:"note"`
-		NeedsReview *bool   `json:"needs_review"`
+		OccurredAt  *string  `json:"occurred_at"`
+		Amount      *int64   `json:"amount"`
+		Type        *string  `json:"type"`
+		Category    *string  `json:"category"`
+		Merchant    *string  `json:"merchant"`
+		Account     *string  `json:"account"`
+		Note        *string  `json:"note"`
+		NeedsReview *bool    `json:"needs_review"`
+		Currency    *string  `json:"currency"`
+		OrigAmount  *float64 `json:"orig_amount"`
 	}
 	if !decode(w, r, &p) {
 		return
@@ -259,12 +287,18 @@ func (a *app) patchTx(w http.ResponseWriter, r *http.Request) {
 	set(&t.Merchant, p.Merchant)
 	set(&t.Account, p.Account)
 	set(&t.Note, p.Note)
+	set(&t.Currency, p.Currency)
+	if p.OrigAmount != nil {
+		t.OrigAmount = p.OrigAmount
+	}
 	if p.Amount != nil {
 		t.Amount = *p.Amount
+	} else if c, _ := normCurrency(t.Currency); c != "IDR" && (p.Currency != nil || p.OrigAmount != nil || p.OccurredAt != nil) {
+		t.Amount = 0 // foreign amount, currency or date changed: recompute the IDR value
 	}
 	conf := t.Confidence
 	t.Confidence = nil // don't let old low confidence re-flag a manual edit
-	if !a.validateTx(w, &t) {
+	if !a.validateTx(w, r, &t) {
 		return
 	}
 	t.Confidence = conf
@@ -272,8 +306,9 @@ func (a *app) patchTx(w http.ResponseWriter, r *http.Request) {
 		t.NeedsReview = *p.NeedsReview
 	}
 	_, err = a.db.Exec(`UPDATE transactions SET occurred_at = ?, amount = ?, type = ?, category = ?, merchant = ?,
-		account = ?, note = ?, needs_review = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?`,
-		t.OccurredAt, t.Amount, t.Type, t.Category, t.Merchant, t.Account, t.Note, t.NeedsReview, id)
+		account = ?, note = ?, needs_review = ?, currency = ?, orig_amount = ?,
+		updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?`,
+		t.OccurredAt, t.Amount, t.Type, t.Category, t.Merchant, t.Account, t.Note, t.NeedsReview, t.Currency, t.OrigAmount, id)
 	if err != nil {
 		a.fail(w, err)
 		return

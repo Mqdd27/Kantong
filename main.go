@@ -31,8 +31,8 @@ var migrationsFS embed.FS
 var wib = time.FixedZone("WIB", 7*3600)
 
 type config struct {
-	port, dbPath, apiToken, appPassword, sessionSecret string
-	insecureCookie                                     bool // COOKIE_SECURE=false: allow login over plain HTTP (no PWA install/push then)
+	port, dbPath, apiToken, appPassword, sessionSecret, fxURL string
+	insecureCookie                                            bool // COOKIE_SECURE=false: allow login over plain HTTP (no PWA install/push then)
 }
 
 type app struct {
@@ -50,6 +50,7 @@ func main() {
 		appPassword:    os.Getenv("APP_PASSWORD"),
 		sessionSecret:  os.Getenv("SESSION_SECRET"),
 		insecureCookie: os.Getenv("COOKIE_SECURE") == "false",
+		fxURL:          env("FX_URL", "https://api.frankfurter.dev"),
 	}
 	if cfg.apiToken == "" || cfg.appPassword == "" || len(cfg.sessionSecret) < 32 {
 		slog.Error("API_TOKEN, APP_PASSWORD and SESSION_SECRET (>=32 chars) are required")
@@ -154,6 +155,25 @@ func (a *app) routes() http.Handler {
 	api.HandleFunc("POST /api/rules", a.createRule)
 	api.HandleFunc("DELETE /api/rules/{id}", a.deleteRule)
 	api.HandleFunc("GET /api/events", a.events)
+	api.HandleFunc("GET /api/assets", a.listAssets)
+	api.HandleFunc("POST /api/assets", a.createAsset)
+	api.HandleFunc("PATCH /api/assets/{id}", a.patchAsset)
+	api.HandleFunc("DELETE /api/assets/{id}", a.deleteAsset)
+	api.HandleFunc("POST /api/orders", a.createOrder)
+	api.HandleFunc("PATCH /api/orders/{ref}", a.patchOrder)
+	api.HandleFunc("GET /api/fx", func(w http.ResponseWriter, r *http.Request) {
+		c, ok := normCurrency(r.URL.Query().Get("currency"))
+		if !ok {
+			writeErr(w, http.StatusBadRequest, "currency must be a 3-letter ISO code")
+			return
+		}
+		rate, err := a.idrRate(r.Context(), c, r.URL.Query().Get("date"))
+		if err != nil {
+			writeErr(w, http.StatusBadGateway, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"currency": c, "idr": rate})
+	})
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("ok")) })

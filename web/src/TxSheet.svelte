@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte'
-  import { s, fmtNum, jakartaLocal, createTx, updateTx, deleteTx } from './lib/store.svelte.js'
+  import { s, fmtNum, CURRENCIES, jakartaLocal, createTx, updateTx, deleteTx } from './lib/store.svelte.js'
 
   /** tx = undefined → add, otherwise edit */
   let { tx, onclose } = $props()
@@ -11,6 +11,9 @@
   let merchant = $state(tx?.merchant ?? '')
   let note = $state(tx?.note ?? '')
   let amountText = $state(tx ? fmtNum.format(tx.amount) : '')
+  let currency = $state(tx?.currency ?? 'IDR')
+  let orig = $state(tx?.orig_amount ?? '')
+  const foreign = $derived(currency !== 'IDR')
   let when = $state(tx ? jakartaLocal(new Date(tx.occurred_at)) : jakartaLocal())
 
   const cats = $derived(s.categories.filter((c) => c.type === type))
@@ -29,8 +32,10 @@
 
   function save(e) {
     e.preventDefault()
-    if (!amount) return
-    const fields = { occurred_at: when + ':00+07:00', amount, type, category, merchant, note }
+    if (foreign ? !(orig > 0) : !amount) return
+    const fields = { occurred_at: when + ':00+07:00', type, category, merchant, note, currency }
+    if (foreign) fields.orig_amount = Number(orig)
+    if (amount) fields.amount = amount // foreign + empty IDR: server converts at that day's rate
     if (tx) updateTx(tx.id, { ...fields, needs_review: false })
     else createTx({ ...fields, account: '', source: 'manual' })
     dialog.close()
@@ -52,9 +57,27 @@
       {/each}
     </div>
 
-    <label>Nominal
-      <input inputmode="numeric" value={amountText} oninput={onAmount} placeholder="0" required />
-    </label>
+    <div class="amt">
+      <label>Mata uang
+        <select bind:value={currency} onchange={() => (amountText = '')}>
+          {#each CURRENCIES as c}<option>{c}</option>{/each}
+        </select>
+      </label>
+      {#if foreign}
+        <label>Nominal {currency}
+          <input type="number" inputmode="decimal" step="any" min="0" bind:value={orig} oninput={() => (amountText = '')} required />
+        </label>
+      {:else}
+        <label>Nominal
+          <input inputmode="numeric" value={amountText} oninput={onAmount} placeholder="0" required />
+        </label>
+      {/if}
+    </div>
+    {#if foreign}
+      <label>Terpotong (Rp), kosongkan = pakai kurs hari itu
+        <input inputmode="numeric" value={amountText} oninput={onAmount} placeholder="otomatis" />
+      </label>
+    {/if}
     <label>Kategori
       <select bind:value={category}>
         {#each cats as c}<option value={c.name}>{c.name}</option>{/each}
@@ -73,7 +96,7 @@
     <div class="actions">
       {#if tx}<button type="button" class="danger" onclick={del}>Hapus</button>{/if}
       <button type="button" onclick={() => dialog.close()}>Batal</button>
-      <button class="primary" disabled={!amount}>Simpan</button>
+      <button class="primary" disabled={foreign ? !(orig > 0) : !amount}>Simpan</button>
     </div>
   </form>
 </dialog>
@@ -106,6 +129,11 @@
     gap: 4px;
     font-size: 13px;
     color: var(--muted);
+  }
+  .amt {
+    display: grid;
+    grid-template-columns: 96px 1fr;
+    gap: 8px;
   }
   .types {
     display: grid;

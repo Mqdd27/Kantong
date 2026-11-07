@@ -1,5 +1,5 @@
 <script>
-  import { fmtIDR, fmtTime, fmtShort } from './lib/store.svelte.js'
+  import { fmtIDR, fmtTime, fmtShort, fmtCur } from './lib/store.svelte.js'
 
   let { tx, onclick, showDate = false } = $props()
   const sign = $derived(tx.type === 'in' ? '+' : tx.type === 'out' ? '−' : '')
@@ -13,7 +13,10 @@
       {#if tx.needs_review}<span class="badge">review</span>{/if}
     </span>
   </span>
-  <span class="amount {tx.type}">{sign}{fmtIDR.format(tx.amount)}</span>
+  <span class="amount {tx.type}">
+    {sign}{fmtIDR.format(tx.amount)}
+    {#if tx.currency && tx.currency !== 'IDR'}<small>{fmtCur(tx.orig_amount, tx.currency)}</small>{/if}
+  </span>
 </button>
 
 <style>
@@ -56,6 +59,12 @@
   .amount {
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
+    display: grid;
+    justify-items: end;
+  }
+  small {
+    color: var(--muted);
+    font-size: 12px;
   }
   .in {
     color: var(--in);

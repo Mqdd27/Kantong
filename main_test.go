@@ -16,7 +16,12 @@ const token = "test-token"
 
 func newTestServer(t *testing.T) *httptest.Server {
 	t.Helper()
+	fx := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"rates":{"USD":0.00005,"SGD":0.0001}}`)) // 1 USD = 20000, 1 SGD = 10000
+	}))
+	t.Cleanup(fx.Close)
 	a, err := newApp(config{
+		fxURL:         fx.URL,
 		dbPath:        filepath.Join(t.TempDir(), "t.db"),
 		apiToken:      token,
 		appPassword:   "pw",
@@ -130,4 +135,48 @@ func TestSSE(t *testing.T) {
 		}
 	}
 	t.Fatal("no event received")
+}
+
+func TestCurrencyAndAssets(t *testing.T) {
+	srv := newTestServer(t)
+	var tx Tx
+	if c := call(t, srv, "POST", "/api/transactions", `{"type":"out","category":"Tagihan","merchant":"Claude","source":"manual","currency":"usd","orig_amount":20}`, &tx); c != 201 || tx.Amount != 400000 || tx.Currency != "USD" {
+		t.Fatalf("usd tx: %d %+v", c, tx)
+	}
+	// charged IDR amount given explicitly wins over the computed one
+	if c := call(t, srv, "POST", "/api/transactions", `{"amount":330000,"type":"out","category":"Tagihan","source":"manual","currency":"USD","orig_amount":20}`, &tx); c != 201 || tx.Amount != 330000 {
+		t.Fatalf("explicit idr: %d %+v", c, tx)
+	}
+	if c := call(t, srv, "POST", "/api/transactions", `{"type":"out","category":"Tagihan","source":"manual","currency":"USD"}`, nil); c != 400 {
+		t.Fatalf("missing orig_amount: %d", c)
+	}
+
+	call(t, srv, "POST", "/api/assets", `{"name":"Jago SGD","kind":"forex","currency":"sgd","balance":100}`, nil)
+	call(t, srv, "POST", "/api/assets", `{"name":"Saham","kind":"stock","balance":5000000}`, nil)
+	// order: pending -> success updates balance; repeated success is idempotent
+	if c := call(t, srv, "POST", "/api/orders", `{"asset":"ORI027","kind":"sbn","side":"buy","amount":1000000,"order_ref":"B-1"}`, nil); c != 201 {
+		t.Fatalf("order: %d", c)
+	}
+	var list struct {
+		Total   int64   `json:"total_idr"`
+		Pending []Order `json:"pending_orders"`
+		Assets  []Asset `json:"assets"`
+	}
+	call(t, srv, "GET", "/api/assets", "", &list)
+	if list.Total != 6000000 || len(list.Pending) != 1 {
+		t.Fatalf("before settle: %+v", list)
+	}
+	for range 2 {
+		if c := call(t, srv, "PATCH", "/api/orders/B-1", `{"status":"success"}`, nil); c != 200 {
+			t.Fatalf("settle: %d", c)
+		}
+	}
+	if c := call(t, srv, "PATCH", "/api/orders/B-1", `{"status":"failed"}`, nil); c != 409 {
+		t.Fatalf("flip settled order: %d", c)
+	}
+	call(t, srv, "POST", "/api/orders", `{"asset":"ORI027","side":"buy","amount":500000,"order_ref":"B-2","status":"failed"}`, nil)
+	call(t, srv, "GET", "/api/assets", "", &list)
+	if list.Total != 7000000 || len(list.Pending) != 0 {
+		t.Fatalf("after settle: %+v", list)
+	}
 }

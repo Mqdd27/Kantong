@@ -23,6 +23,7 @@ export const s = $state({
   authed: true,
   live: false,
   error: '',
+  portfolio: { assets: [], total_idr: 0, pending_orders: [], missing_rates: [] },
 })
 
 const byNewest = (a, b) => (a.occurred_at < b.occurred_at ? 1 : a.occurred_at > b.occurred_at ? -1 : b.id - a.id)
@@ -82,6 +83,7 @@ export function connect() {
   es.addEventListener('transaction.created', (e) => upsert(JSON.parse(e.data)))
   es.addEventListener('transaction.updated', (e) => upsert(JSON.parse(e.data)))
   es.addEventListener('transaction.deleted', (e) => remove(JSON.parse(e.data).id))
+  es.addEventListener('assets.changed', loadAssets)
   es.onerror = () => {
     // iOS drops the stream when the app is backgrounded: reconnect and refetch.
     s.live = false
@@ -97,6 +99,7 @@ if (typeof document !== 'undefined') {
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && s.authed) {
       load()
+      loadAssets()
       connect()
     }
   })
@@ -107,9 +110,9 @@ export async function createTx(t) {
   const temp = { ...t, id: -Date.now(), source: 'manual', source_ref: null, confidence: null, needs_review: false }
   upsert(temp)
   try {
-    const { id } = await api('/transactions', { method: 'POST', body: t })
+    const saved = await api('/transactions', { method: 'POST', body: t })
     remove(temp.id)
-    if (!s.txs.some((x) => x.id === id)) upsert({ ...temp, id })
+    upsert(saved) // server fills the IDR amount for foreign-currency spends
   } catch (e) {
     remove(temp.id)
     fail(e)
@@ -144,4 +147,35 @@ export async function deleteTx(id) {
 export async function login(password) {
   await api('/login', { method: 'POST', body: { password } })
   s.authed = true
+}
+
+// ---- assets ----
+export const CURRENCIES = ['IDR', 'USD', 'SGD', 'CNY', 'JPY', 'KRW', 'EUR', 'AUD', 'GBP', 'HKD', 'MYR', 'THB']
+export const fmtCur = (amount, currency = 'IDR') =>
+  new Intl.NumberFormat('id-ID', { style: 'currency', currency, maximumFractionDigits: currency === 'IDR' ? 0 : 2 }).format(amount)
+
+export async function loadAssets() {
+  try {
+    s.portfolio = await api('/assets')
+  } catch (e) {
+    fail(e)
+  }
+}
+
+// ponytail: not optimistic; the SSE assets.changed event refreshes the list.
+export async function saveAsset(id, a) {
+  try {
+    await api(id ? `/assets/${id}` : '/assets', { method: id ? 'PATCH' : 'POST', body: a })
+    return true
+  } catch (e) {
+    fail(e)
+  }
+}
+
+export async function deleteAsset(id) {
+  try {
+    await api(`/assets/${id}`, { method: 'DELETE' })
+  } catch (e) {
+    fail(e)
+  }
 }
