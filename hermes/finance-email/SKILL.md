@@ -37,7 +37,7 @@ Scripts live in `~/.hermes/skills/finance-email/scripts/` (Python stdlib only).
    ```
    echo '{"transactions":[{...}],"orders":[{...}],"skip":["<id>"]}' | python3 ~/.hermes/skills/finance-email/scripts/post.py
    ```
-   It writes `skipped.json`, POSTs each transaction (201/409 = ok; 400 -> body logged; other errors logged and retried next run; no retries within a run), and prints either `[SILENT]` or a Telegram-ready summary of transactions with `needs_review`.
+   It writes `skipped.json`, POSTs each transaction (201/409 = ok; 400 -> body logged; other errors logged and retried next run; no retries within a run), and prints `[SILENT]` (Kantong itself sends a Telegram message for every email transaction, review flag included).
 4. **Final response** — output exactly what `post.py` printed on stdout (the summary or `[SILENT]`), nothing else. Cron delivers it to Telegram; `[SILENT]` suppresses delivery.
 
 ## Cron
