@@ -12,14 +12,16 @@ import (
 )
 
 type Asset struct {
-	ID        int64    `json:"id"`
-	Name      string   `json:"name"`
-	Kind      string   `json:"kind"`
-	Currency  string   `json:"currency"`
-	Balance   float64  `json:"balance"`
-	Invested  *float64 `json:"invested"`
-	Note      string   `json:"note"`
-	UpdatedAt string   `json:"updated_at"`
+	ID         int64    `json:"id"`
+	Name       string   `json:"name"`
+	Kind       string   `json:"kind"`
+	Currency   string   `json:"currency"`
+	Balance    float64  `json:"balance"`
+	Invested   *float64 `json:"invested"`
+	Note       string   `json:"note"`
+	Target     *float64 `json:"target"`      // savings goal in Currency
+	TargetDate *string  `json:"target_date"` // YYYY-MM-DD
+	UpdatedAt  string   `json:"updated_at"`
 	// computed for responses
 	Rate     float64 `json:"rate"`      // IDR per unit of Currency
 	ValueIDR int64   `json:"value_idr"` // Balance converted to IDR
@@ -41,11 +43,11 @@ type Order struct {
 var assetKinds = map[string]bool{"bank": true, "ewallet": true, "forex": true, "cash": true, "stock": true,
 	"bond": true, "sbn": true, "mutual_fund": true, "gold": true, "crypto": true, "other": true}
 
-const assetCols = `id, name, kind, currency, balance, invested, note, updated_at`
+const assetCols = `id, name, kind, currency, balance, invested, note, target, target_date, updated_at`
 
 func scanAsset(s scanner) (Asset, error) {
 	var x Asset
-	err := s.Scan(&x.ID, &x.Name, &x.Kind, &x.Currency, &x.Balance, &x.Invested, &x.Note, &x.UpdatedAt)
+	err := s.Scan(&x.ID, &x.Name, &x.Kind, &x.Currency, &x.Balance, &x.Invested, &x.Note, &x.Target, &x.TargetDate, &x.UpdatedAt)
 	return x, err
 }
 
@@ -62,6 +64,9 @@ func (a *app) assetsChanged() { a.hub.publish("assets.changed", map[string]any{}
 
 func validAsset(w http.ResponseWriter, x *Asset) bool {
 	x.Name, x.Note = strings.TrimSpace(x.Name), strings.TrimSpace(x.Note)
+	if x.TargetDate != nil && *x.TargetDate == "" {
+		x.TargetDate = nil
+	}
 	var ok bool
 	x.Currency, ok = normCurrency(x.Currency)
 	switch {
@@ -71,6 +76,10 @@ func validAsset(w http.ResponseWriter, x *Asset) bool {
 		writeErr(w, http.StatusBadRequest, "kind must be one of bank, ewallet, forex, cash, stock, bond, sbn, mutual_fund, gold, crypto, other")
 	case !ok:
 		writeErr(w, http.StatusBadRequest, "currency must be a 3-letter ISO code")
+	case x.Target != nil && *x.Target <= 0:
+		writeErr(w, http.StatusBadRequest, "target must be positive")
+	case x.TargetDate != nil && *x.TargetDate != "" && !validDate(*x.TargetDate):
+		writeErr(w, http.StatusBadRequest, "target_date must be YYYY-MM-DD")
 	default:
 		return true
 	}
@@ -173,9 +182,10 @@ func (a *app) assetHistory(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-// snapshotLoop records a snapshot every hour so days without app visits still get a point.
+// snapshotLoop hourly records a net worth snapshot (so days without visits get a point) and posts due recurring items.
 func (a *app) snapshotLoop(ctx context.Context) {
 	for {
+		a.postDue(ctx)
 		if _, err := a.portfolio(ctx); err != nil && ctx.Err() == nil {
 			slog.Error("snapshot", "err", err)
 		}
@@ -192,8 +202,8 @@ func (a *app) createAsset(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &x) || !validAsset(w, &x) {
 		return
 	}
-	res, err := a.db.Exec(`INSERT INTO assets (name, kind, currency, balance, invested, note) VALUES (?, ?, ?, ?, ?, ?)`,
-		x.Name, x.Kind, x.Currency, x.Balance, x.Invested, x.Note)
+	res, err := a.db.Exec(`INSERT INTO assets (name, kind, currency, balance, invested, note, target, target_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		x.Name, x.Kind, x.Currency, x.Balance, x.Invested, x.Note, x.Target, x.TargetDate)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
 			writeErr(w, http.StatusConflict, "asset name already exists")
@@ -224,9 +234,9 @@ func (a *app) patchAsset(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &x) || !validAsset(w, &x) {
 		return
 	}
-	_, err = a.db.Exec(`UPDATE assets SET name = ?, kind = ?, currency = ?, balance = ?, invested = ?, note = ?,
+	_, err = a.db.Exec(`UPDATE assets SET name = ?, kind = ?, currency = ?, balance = ?, invested = ?, note = ?, target = ?, target_date = ?,
 		updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?`,
-		x.Name, x.Kind, x.Currency, x.Balance, x.Invested, x.Note, id)
+		x.Name, x.Kind, x.Currency, x.Balance, x.Invested, x.Note, x.Target, x.TargetDate, id)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
 			writeErr(w, http.StatusConflict, "asset name already exists")
@@ -422,3 +432,5 @@ func (a *app) patchOrder(w http.ResponseWriter, r *http.Request) {
 	a.assetsChanged()
 	writeJSON(w, http.StatusOK, o)
 }
+
+func validDate(s string) bool { _, err := time.Parse(time.DateOnly, s); return err == nil }

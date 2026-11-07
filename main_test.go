@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -183,5 +184,70 @@ func TestCurrencyAndAssets(t *testing.T) {
 	call(t, srv, "GET", "/api/assets/history", "", &hist)
 	if len(hist) != 1 || hist[0].Total != 7000000 || hist[0].Invested != 7000000 {
 		t.Fatalf("history: %+v", hist)
+	}
+}
+
+func TestNextDate(t *testing.T) {
+	for _, c := range []struct {
+		in, freq string
+		day      int
+		want     string
+	}{
+		{"2026-01-31", "monthly", 31, "2026-02-28"},
+		{"2026-02-28", "monthly", 31, "2026-03-31"},
+		{"2026-11-08", "weekly", 8, "2026-11-15"},
+		{"2028-02-29", "yearly", 29, "2029-02-28"},
+	} {
+		if got := nextDate(c.in, c.freq, c.day); got != c.want {
+			t.Errorf("nextDate(%s,%s,%d) = %s, want %s", c.in, c.freq, c.day, got, c.want)
+		}
+	}
+}
+
+func TestBudgetRecurringSearch(t *testing.T) {
+	srv := newTestServer(t)
+	month := time.Now().In(wib).Format("2006-01")
+	prev := time.Now().In(wib).AddDate(0, -1, 0).Format("2006-01")
+	// limit set last month carries into this month
+	call(t, srv, "PUT", "/api/budget", `{"month":"`+prev+`","category":"","amount":5000000}`, nil)
+	call(t, srv, "PUT", "/api/budget", `{"month":"`+prev+`","category":"Makan","amount":1000000}`, nil)
+	call(t, srv, "POST", "/api/transactions", `{"amount":200000,"type":"out","category":"Makan","merchant":"Warteg 100%","source":"manual"}`, nil)
+	call(t, srv, "POST", "/api/transactions", `{"amount":3000000,"type":"out","category":"Investasi","source":"manual"}`, nil)
+
+	// auto recurring dated today posts immediately; a manual one stays upcoming
+	td := time.Now().In(wib).Format(time.DateOnly)
+	if c := call(t, srv, "POST", "/api/recurring", `{"type":"out","category":"Tagihan","merchant":"Claude","currency":"USD","orig_amount":20,"freq":"monthly","next_date":"`+td+`","auto":true}`, nil); c != 201 {
+		t.Fatalf("recurring: %d", c)
+	}
+	var recs []Recurring
+	call(t, srv, "GET", "/api/recurring", "", &recs)
+	if len(recs) != 1 || recs[0].NextDate <= td {
+		t.Fatalf("auto not advanced: %+v", recs)
+	}
+	end := time.Now().In(wib).AddDate(0, 1, -time.Now().In(wib).Day()).Format(time.DateOnly) // last day of month
+	call(t, srv, "POST", "/api/recurring", `{"amount":150000,"type":"out","category":"Tagihan","merchant":"Internet","freq":"monthly","next_date":"`+end+`"}`, nil)
+
+	var b struct {
+		Overall    *int64       `json:"overall"`
+		Spent      int64        `json:"spent"`
+		Upcoming   []Upcoming   `json:"upcoming"`
+		Categories []BudgetLine `json:"categories"`
+	}
+	call(t, srv, "GET", "/api/budget?month="+month, "", &b)
+	// spent = 200000 makan + 400000 claude (20 USD); Investasi is outside the budget
+	if b.Overall == nil || *b.Overall != 5000000 || b.Spent != 600000 || len(b.Upcoming) != 1 || b.Upcoming[0].Amount != 150000 {
+		t.Fatalf("budget: %+v", b)
+	}
+	// record the manual bill: it leaves upcoming and becomes a transaction
+	call(t, srv, "POST", "/api/recurring/"+strconv.FormatInt(recs[0].ID+1, 10)+"/advance", "", nil)
+	call(t, srv, "GET", "/api/budget?month="+month, "", &b)
+	if len(b.Upcoming) != 0 || b.Spent != 750000 {
+		t.Fatalf("after advance: %+v", b)
+	}
+
+	var found []Tx
+	call(t, srv, "GET", "/api/transactions?q=100%25", "", &found)
+	if len(found) != 1 || found[0].Merchant != "Warteg 100%" {
+		t.Fatalf("search: %+v", found)
 	}
 }

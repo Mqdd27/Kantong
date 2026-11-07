@@ -29,13 +29,26 @@
     if (edit && dialog && !dialog.open) dialog.showModal()
   })
   function openEdit(a) {
-    f = a ? { ...a, invested: a.invested ?? '' } : { name: '', kind: 'bank', currency: 'IDR', balance: '', invested: '', note: '' }
+    f = a
+      ? { ...a, invested: a.invested ?? '', target: a.target ?? '', target_date: a.target_date ?? '' }
+      : { name: '', kind: 'bank', currency: 'IDR', balance: '', invested: '', note: '', target: '', target_date: '' }
     edit = a ?? {}
   }
+  const fmtMon = new Intl.DateTimeFormat('id-ID', { month: 'short', year: 'numeric', timeZone: 'UTC' })
+  // savings goal: progress and the monthly amount still needed to hit it by target_date
+  function goal(a) {
+    const pct = (a.balance / a.target) * 100
+    if (pct >= 100 || !a.target_date) return { pct }
+    const t = new Date(a.target_date + 'T00:00:00Z'), now = new Date()
+    const months = Math.max(1, (t.getUTCFullYear() - now.getUTCFullYear()) * 12 + t.getUTCMonth() - now.getUTCMonth())
+    return { pct, perMonth: (a.target - a.balance) / months, by: fmtMon.format(t) }
+  }
+
   async function save(e) {
     e.preventDefault()
     const body = { name: f.name, kind: f.kind, currency: f.currency, balance: Number(f.balance) || 0, note: f.note,
-      invested: f.invested === '' || f.invested == null ? null : Number(f.invested) }
+      invested: f.invested === '' || f.invested == null ? null : Number(f.invested),
+      target: Number(f.target) > 0 ? Number(f.target) : null, target_date: f.target ? f.target_date || null : null }
     if (await saveAsset(edit.id, body)) dialog.close()
   }
   async function del() {
@@ -91,6 +104,16 @@
           {#if a.currency !== 'IDR'}{fmtCur(a.balance, a.currency)} · 1 {a.currency} = {fmtIDR.format(a.rate)}{/if}
           {#if a.invested}{a.currency !== 'IDR' ? ' · ' : ''}modal {fmtCur(a.invested, a.currency)}{/if}
         </span>
+        {#if a.target}
+          {@const g = goal(a)}
+          <span class="goal">
+            <span class="gbar"><span style:width="{Math.min(100, g.pct)}%"></span></span>
+            <span class="meta">
+              {g.pct >= 100 ? '✓ Target tercapai' : `${Math.floor(g.pct)}% dari ${fmtCur(a.target, a.currency)}`}{#if g.perMonth}
+                · perlu {fmtCur(g.perMonth, a.currency)}/bln sampai {g.by}{/if}
+            </span>
+          </span>
+        {/if}
       </span>
       <span class="val">
         {fmtIDR.format(a.value_idr)}
@@ -128,6 +151,14 @@
       <label>Modal / total disetor ({f.currency}), opsional
         <input type="number" inputmode="decimal" step="any" bind:value={f.invested} />
       </label>
+      <div class="two">
+        <label>Target tabungan ({f.currency}), opsional
+          <input type="number" inputmode="decimal" step="any" min="0" bind:value={f.target} />
+        </label>
+        <label>Tercapai pada
+          <input type="date" bind:value={f.target_date} />
+        </label>
+      </div>
       <label>Catatan <input bind:value={f.note} /></label>
       <div class="actions">
         {#if edit.id}<button type="button" class="danger" onclick={del}>Hapus</button>{/if}
@@ -209,6 +240,24 @@
     text-align: right;
     color: var(--muted);
     font-variant-numeric: tabular-nums;
+  }
+  .goal {
+    display: grid;
+    gap: 3px;
+    margin-top: 4px;
+  }
+  .gbar {
+    height: 6px;
+    border-radius: 3px;
+    background: var(--surface);
+    overflow: hidden;
+    max-width: 240px;
+  }
+  .gbar span {
+    display: block;
+    height: 100%;
+    border-radius: 3px;
+    background: var(--in);
   }
   .warn {
     color: var(--warn);

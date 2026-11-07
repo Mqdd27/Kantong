@@ -25,6 +25,8 @@ export const s = $state({
   error: '',
   portfolio: { assets: [], total_idr: 0, pending_orders: [], missing_rates: [] },
   history: [],
+  budget: null,
+  recurring: [],
 })
 
 const byNewest = (a, b) => (a.occurred_at < b.occurred_at ? 1 : a.occurred_at > b.occurred_at ? -1 : b.id - a.id)
@@ -62,6 +64,7 @@ export async function load() {
     const [txs, cats] = await Promise.all([api(`/transactions?month=${month}`), s.categories.length ? null : api('/categories')])
     if (cats) s.categories = cats
     if (month === s.month) s.txs = txs
+    loadBudget()
   } catch (e) {
     fail(e)
   }
@@ -85,6 +88,8 @@ export function connect() {
   es.addEventListener('transaction.updated', (e) => upsert(JSON.parse(e.data)))
   es.addEventListener('transaction.deleted', (e) => remove(JSON.parse(e.data).id))
   es.addEventListener('assets.changed', loadAssets)
+  es.addEventListener('budget.changed', budgetSoon)
+  for (const ev of ['transaction.created', 'transaction.updated', 'transaction.deleted']) es.addEventListener(ev, budgetSoon)
   es.onerror = () => {
     // iOS drops the stream when the app is backgrounded: reconnect and refetch.
     s.live = false
@@ -181,3 +186,34 @@ export async function deleteAsset(id) {
     fail(e)
   }
 }
+
+// ---- budget & recurring ----
+let budgetTimer
+const budgetSoon = () => {
+  clearTimeout(budgetTimer)
+  budgetTimer = setTimeout(loadBudget, 300) // coalesce bursts of SSE events
+}
+
+export async function loadBudget() {
+  const month = s.month
+  try {
+    const [b, rec] = await Promise.all([api(`/budget?month=${month}`), api('/recurring')])
+    if (month === s.month) s.budget = b
+    s.recurring = rec
+  } catch (e) {
+    fail(e)
+  }
+}
+
+/** Runs an API write; the SSE event then refreshes the view. Returns true on success. */
+export async function act(path, method, body) {
+  try {
+    await api(path, { method, body })
+    budgetSoon()
+    return true
+  } catch (e) {
+    fail(e)
+  }
+}
+
+export const setBudget = (category, amount) => act('/budget', 'PUT', { month: s.month, category, amount })

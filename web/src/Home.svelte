@@ -2,6 +2,7 @@
   import { s, fmtIDR } from './lib/store.svelte.js'
   import MonthBar from './MonthBar.svelte'
   import TxRow from './TxRow.svelte'
+  import BudgetCard from './BudgetCard.svelte'
 
   let { open } = $props()
 
@@ -25,6 +26,8 @@
   <div><span>Keluar</span><b>{fmtIDR.format(outSum)}</b></div>
   <div><span>Selisih</span><b class:in={inSum >= outSum}>{fmtIDR.format(inSum - outSum)}</b></div>
 </section>
+
+<div class="gap"><BudgetCard compact /></div>
 
 {#if byCat.length}
   <h3>Pengeluaran per kategori</h3>
@@ -51,6 +54,9 @@
 </div>
 
 <style>
+  .gap {
+    margin-top: 8px;
+  }
   @media (min-width: 900px) {
     .cols {
       display: grid;
@@ -83,9 +89,17 @@
     font-size: 12px;
   }
   .totals b {
-    font-size: 14px;
+    font-size: 15px;
     font-variant-numeric: tabular-nums;
-    overflow-wrap: anywhere;
+    white-space: nowrap;
+  }
+  @media (max-width: 459px) {
+    .totals {
+      grid-template-columns: 1fr 1fr;
+    }
+    .totals div:last-child {
+      grid-column: span 2;
+    }
   }
   .in {
     color: var(--in);

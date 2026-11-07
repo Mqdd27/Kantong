@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -125,34 +126,41 @@ func (a *app) categories() ([]Category, error) {
 
 // validateTx normalizes and checks t; it writes the error response and returns false on failure.
 func (a *app) validateTx(w http.ResponseWriter, r *http.Request, t *Tx) bool {
+	if body := a.checkTx(r.Context(), t); body != nil {
+		writeJSON(w, http.StatusBadRequest, body)
+		return false
+	}
+	return true
+}
+
+func badTx(msg string) map[string]any { return map[string]any{"error": msg} }
+
+// checkTx normalizes t and returns an error body, or nil when t is valid.
+func (a *app) checkTx(ctx context.Context, t *Tx) map[string]any {
 	if t.OccurredAt == "" {
 		t.OccurredAt = time.Now().In(wib).Format(time.RFC3339)
 	}
 	ts, err := time.Parse(time.RFC3339, t.OccurredAt)
 	if err != nil {
-		writeErr(w, http.StatusBadRequest, "occurred_at must be ISO 8601 / RFC3339")
-		return false
+		return badTx("occurred_at must be ISO 8601 / RFC3339")
 	}
 	t.OccurredAt = ts.In(wib).Format(time.RFC3339)
 	t.Merchant, t.Account, t.Note = strings.TrimSpace(t.Merchant), strings.TrimSpace(t.Account), strings.TrimSpace(t.Note)
 
 	var ok bool
 	if t.Currency, ok = normCurrency(t.Currency); !ok {
-		writeErr(w, http.StatusBadRequest, "currency must be a 3-letter ISO code, e.g. USD")
-		return false
+		return badTx("currency must be a 3-letter ISO code, e.g. USD")
 	}
 	if t.Currency == "IDR" {
 		t.OrigAmount = nil
 	} else {
 		if t.OrigAmount == nil || *t.OrigAmount <= 0 {
-			writeErr(w, http.StatusBadRequest, "orig_amount (amount in currency) is required when currency is not IDR")
-			return false
+			return badTx("orig_amount (amount in currency) is required when currency is not IDR")
 		}
 		if t.Amount <= 0 { // no charged IDR amount given: convert at that day's rate
-			rate, err := a.idrRate(r.Context(), t.Currency, t.OccurredAt[:10])
+			rate, err := a.idrRate(ctx, t.Currency, t.OccurredAt[:10])
 			if err != nil {
-				writeErr(w, http.StatusBadRequest, err.Error())
-				return false
+				return badTx(err.Error())
 			}
 			t.Amount = int64(math.Round(*t.OrigAmount * rate))
 		}
@@ -172,16 +180,11 @@ func (a *app) validateTx(w http.ResponseWriter, r *http.Request, t *Tx) bool {
 		msg = "confidence must be between 0 and 1"
 	}
 	if msg != "" {
-		writeErr(w, http.StatusBadRequest, msg)
-		return false
+		return badTx(msg)
 	}
 	if !a.categoryExists(t.Category, t.Type) {
 		cats, _ := a.categories()
-		writeJSON(w, http.StatusBadRequest, map[string]any{
-			"error": fmt.Sprintf("unknown category %q for type %q", t.Category, t.Type),
-			"valid": cats,
-		})
-		return false
+		return map[string]any{"error": fmt.Sprintf("unknown category %q for type %q", t.Category, t.Type), "valid": cats}
 	}
 	if t.SourceRef != nil && *t.SourceRef == "" {
 		t.SourceRef = nil
@@ -189,7 +192,7 @@ func (a *app) validateTx(w http.ResponseWriter, r *http.Request, t *Tx) bool {
 	if t.Confidence != nil && *t.Confidence < 0.7 {
 		t.NeedsReview = true
 	}
-	return true
+	return nil
 }
 
 func (a *app) getTx(id int64) (Tx, error) {
@@ -203,12 +206,7 @@ func (a *app) createTx(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &t) || !a.validateTx(w, r, &t) {
 		return
 	}
-	res, err := a.db.Exec(`INSERT INTO transactions
-		(occurred_at, amount, type, category, merchant, account, note, source, source_ref, confidence, needs_review, currency, orig_amount)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		t.OccurredAt, t.Amount, t.Type, t.Category, t.Merchant, t.Account, t.Note, t.Source, t.SourceRef, t.Confidence, t.NeedsReview,
-		t.Currency, t.OrigAmount)
-	if err != nil {
+	if err := a.insertTx(&t); err != nil {
 		if strings.Contains(err.Error(), "UNIQUE constraint failed: transactions.source_ref") {
 			var id int64
 			a.db.QueryRow(`SELECT id FROM transactions WHERE source_ref = ?`, *t.SourceRef).Scan(&id)
@@ -218,9 +216,22 @@ func (a *app) createTx(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, err)
 		return
 	}
-	t.ID, _ = res.LastInsertId()
-	a.hub.publish("transaction.created", t)
 	writeJSON(w, http.StatusCreated, t) // includes id, plus the computed IDR amount
+}
+
+// insertTx stores a validated t, sets its ID and notifies clients.
+func (a *app) insertTx(t *Tx) error {
+	res, err := a.db.Exec(`INSERT INTO transactions
+		(occurred_at, amount, type, category, merchant, account, note, source, source_ref, confidence, needs_review, currency, orig_amount)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		t.OccurredAt, t.Amount, t.Type, t.Category, t.Merchant, t.Account, t.Note, t.Source, t.SourceRef, t.Confidence, t.NeedsReview,
+		t.Currency, t.OrigAmount)
+	if err != nil {
+		return err
+	}
+	t.ID, _ = res.LastInsertId()
+	a.hub.publish("transaction.created", *t)
+	return nil
 }
 
 func (a *app) listTx(w http.ResponseWriter, r *http.Request) {
@@ -229,8 +240,16 @@ func (a *app) listTx(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	rows, err := a.db.Query(`SELECT `+txCols+` FROM transactions
-		WHERE occurred_at >= ? AND occurred_at < ? ORDER BY occurred_at DESC, id DESC`, from, to)
+	var rows *sql.Rows
+	if q := strings.TrimSpace(r.URL.Query().Get("q")); q != "" { // search all months
+		like := "%" + strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`).Replace(q) + "%"
+		rows, err = a.db.Query(`SELECT `+txCols+` FROM transactions
+			WHERE merchant LIKE ?1 ESCAPE '\' OR note LIKE ?1 ESCAPE '\' OR category LIKE ?1 ESCAPE '\' OR account LIKE ?1 ESCAPE '\'
+			ORDER BY occurred_at DESC, id DESC LIMIT 200`, like)
+	} else {
+		rows, err = a.db.Query(`SELECT `+txCols+` FROM transactions
+			WHERE occurred_at >= ? AND occurred_at < ? ORDER BY occurred_at DESC, id DESC`, from, to)
+	}
 	if err != nil {
 		a.fail(w, err)
 		return

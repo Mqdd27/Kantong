@@ -6,6 +6,8 @@
   import TxList from './TxList.svelte'
   import Review from './Review.svelte'
   import Assets from './Assets.svelte'
+  import Budget from './Budget.svelte'
+  import Analytics from './Analytics.svelte'
   import TxSheet from './TxSheet.svelte'
 
   let route = $state(location.hash.slice(1) || '/')
@@ -24,8 +26,10 @@
   const tabs = [
     ['/', 'Beranda'],
     ['/tx', 'Transaksi'],
-    ['/review', 'Review'],
+    ['/budget', 'Budget'],
+    ['/analytics', 'Analitik'],
     ['/assets', 'Aset'],
+    ['/review', 'Review'], // mobile reaches it through the banner on Beranda/Transaksi
   ]
 </script>
 
@@ -33,18 +37,25 @@
   <Login />
 {:else}
   <main class:narrow={route === '/tx' || route === '/review'}>
+    {#if reviewCount && (route === '/' || route === '/tx')}
+      <a class="banner" href="#/review">⚠︎ {reviewCount} transaksi perlu direview ›</a>
+    {/if}
     {#if route === '/tx'}
       <TxList {open} />
     {:else if route === '/review'}
       <Review {open} />
     {:else if route === '/assets'}
       <Assets />
+    {:else if route === '/budget'}
+      <Budget />
+    {:else if route === '/analytics'}
+      <Analytics />
     {:else}
       <Home {open} />
     {/if}
   </main>
 
-  {#if route !== '/assets'}
+  {#if route !== '/assets' && route !== '/analytics'}
     <button class="fab" aria-label="Tambah transaksi" onclick={() => (sheet = {})}>+</button>
   {/if}
 
@@ -52,7 +63,7 @@
     <span class="brand">Kantong</span>
     <button class="primary new" onclick={() => (sheet = {})}>+ Transaksi</button>
     {#each tabs as [href, label]}
-      <a href={'#' + href} class:active={route === href}>
+      <a href={'#' + href} class:active={route === href} class:desk={href === '/review'}>
         {label}
         {#if href === '/review' && reviewCount}<span class="count">{reviewCount}</span>{/if}
       </a>
@@ -93,7 +104,8 @@
     font-weight: 600;
   }
   .brand,
-  .new {
+  .new,
+  .desk {
     display: none;
   }
   @media (min-width: 900px) {
@@ -114,7 +126,9 @@
       border-top: 0;
       border-right: 1px solid var(--line);
     }
-    nav a {
+    nav a,
+    nav a.desk {
+      display: block;
       flex: none;
       text-align: left;
       padding: 10px 12px;
@@ -141,6 +155,17 @@
       left: auto;
       width: 360px;
     }
+  }
+  .banner {
+    display: block;
+    background: var(--surface);
+    border: 1px solid var(--warn);
+    color: var(--text);
+    border-radius: 10px;
+    padding: 10px 14px;
+    margin-bottom: 12px;
+    text-decoration: none;
+    font-size: 14px;
   }
   .count {
     background: var(--warn);
