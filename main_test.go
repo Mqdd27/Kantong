@@ -179,4 +179,9 @@ func TestCurrencyAndAssets(t *testing.T) {
 	if list.Total != 7000000 || len(list.Pending) != 0 {
 		t.Fatalf("after settle: %+v", list)
 	}
+	var hist []struct{ Total, Invested int64 }
+	call(t, srv, "GET", "/api/assets/history", "", &hist)
+	if len(hist) != 1 || hist[0].Total != 7000000 || hist[0].Invested != 7000000 {
+		t.Fatalf("history: %+v", hist)
+	}
 }

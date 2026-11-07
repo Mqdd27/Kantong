@@ -32,7 +32,7 @@
 {#if !s.authed}
   <Login />
 {:else}
-  <main>
+  <main class:narrow={route === '/tx' || route === '/review'}>
     {#if route === '/tx'}
       <TxList {open} />
     {:else if route === '/review'}
@@ -49,6 +49,8 @@
   {/if}
 
   <nav>
+    <span class="brand">Kantong</span>
+    <button class="primary new" onclick={() => (sheet = {})}>+ Transaksi</button>
     {#each tabs as [href, label]}
       <a href={'#' + href} class:active={route === href}>
         {label}
@@ -89,6 +91,56 @@
   nav a.active {
     color: var(--text);
     font-weight: 600;
+  }
+  .brand,
+  .new {
+    display: none;
+  }
+  @media (min-width: 900px) {
+    main {
+      max-width: 1200px;
+      margin-left: 220px;
+      padding: 32px 40px;
+    }
+    main.narrow {
+      max-width: 800px;
+    }
+    nav {
+      inset: 0 auto 0 0;
+      width: 220px;
+      flex-direction: column;
+      gap: 2px;
+      padding: 24px 12px;
+      border-top: 0;
+      border-right: 1px solid var(--line);
+    }
+    nav a {
+      flex: none;
+      text-align: left;
+      padding: 10px 12px;
+      border-radius: 8px;
+      font-size: 15px;
+    }
+    nav a.active {
+      background: var(--bg);
+    }
+    .brand {
+      display: block;
+      font-weight: 700;
+      font-size: 18px;
+      padding: 0 12px 16px;
+    }
+    .new {
+      display: block;
+      margin-bottom: 16px;
+    }
+    .fab {
+      display: none;
+    }
+    .toast {
+      left: auto;
+      width: 360px;
+    }
   }
   .count {
     background: var(--warn);

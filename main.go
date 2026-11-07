@@ -71,6 +71,7 @@ func main() {
 		ReadHeaderTimeout: 10 * time.Second,
 		BaseContext:       func(_ net.Listener) context.Context { return ctx }, // cancels SSE streams on shutdown
 	}
+	go a.snapshotLoop(ctx)
 	go func() {
 		<-ctx.Done()
 		sctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -156,6 +157,7 @@ func (a *app) routes() http.Handler {
 	api.HandleFunc("DELETE /api/rules/{id}", a.deleteRule)
 	api.HandleFunc("GET /api/events", a.events)
 	api.HandleFunc("GET /api/assets", a.listAssets)
+	api.HandleFunc("GET /api/assets/history", a.assetHistory)
 	api.HandleFunc("POST /api/assets", a.createAsset)
 	api.HandleFunc("PATCH /api/assets/{id}", a.patchAsset)
 	api.HandleFunc("DELETE /api/assets/{id}", a.deleteAsset)

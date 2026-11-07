@@ -18,6 +18,8 @@
 
 <MonthBar />
 
+<div class="cols">
+<div>
 <section class="totals">
   <div><span>Masuk</span><b class="in">{fmtIDR.format(inSum)}</b></div>
   <div><span>Keluar</span><b>{fmtIDR.format(outSum)}</b></div>
@@ -37,14 +39,32 @@
   </ul>
 {/if}
 
+</div>
+<div>
 <h3>Terbaru</h3>
 {#each s.txs.slice(0, 10) as tx (tx.id)}
   <TxRow {tx} showDate onclick={() => open(tx)} />
 {:else}
   <p class="empty">Belum ada transaksi bulan ini.</p>
 {/each}
+</div>
+</div>
 
 <style>
+  @media (min-width: 900px) {
+    .cols {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 40px;
+      align-items: start;
+    }
+    .cols > div > h3:first-child {
+      margin-top: 0;
+    }
+    .totals b {
+      font-size: 18px;
+    }
+  }
   .totals {
     display: grid;
     grid-template-columns: repeat(3, 1fr);

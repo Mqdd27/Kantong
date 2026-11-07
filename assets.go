@@ -1,8 +1,11 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"errors"
+	"log/slog"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -18,8 +21,8 @@ type Asset struct {
 	Note      string   `json:"note"`
 	UpdatedAt string   `json:"updated_at"`
 	// computed for responses
-	Rate     float64 `json:"rate,omitempty"`      // IDR per unit of Currency
-	ValueIDR int64   `json:"value_idr,omitempty"` // Balance converted to IDR
+	Rate     float64 `json:"rate"`      // IDR per unit of Currency
+	ValueIDR int64   `json:"value_idr"` // Balance converted to IDR
 }
 
 type Order struct {
@@ -54,7 +57,10 @@ func scanOrder(s scanner) (Order, error) {
 	return o, err
 }
 
-func (a *app) assetsChanged() { a.hub.publish("assets.changed", map[string]any{}) }
+func (a *app) assetsChanged() {
+	go a.portfolio(context.Background()) // keep today's snapshot current
+	a.hub.publish("assets.changed", map[string]any{})
+}
 
 func validAsset(w http.ResponseWriter, x *Asset) bool {
 	x.Name, x.Note = strings.TrimSpace(x.Name), strings.TrimSpace(x.Note)
@@ -73,57 +79,114 @@ func validAsset(w http.ResponseWriter, x *Asset) bool {
 	return false
 }
 
-// listAssets returns every asset with its IDR value, the net worth total and pending orders.
-func (a *app) listAssets(w http.ResponseWriter, r *http.Request) {
-	rows, err := a.db.Query(`SELECT ` + assetCols + ` FROM assets ORDER BY kind, name`)
+type portfolio struct {
+	Assets       []Asset  `json:"assets"`
+	TotalIDR     int64    `json:"total_idr"`
+	InvestedIDR  int64    `json:"invested_idr"` // cost basis, or current value for assets without one
+	Pending      []Order  `json:"pending_orders"`
+	MissingRates []string `json:"missing_rates"`
+}
+
+// portfolio values every asset in IDR and records today's snapshot for the performance chart.
+func (a *app) portfolio(ctx context.Context) (p portfolio, err error) {
+	p.Assets, p.Pending, p.MissingRates = []Asset{}, []Order{}, []string{}
+	rows, err := a.db.QueryContext(ctx, `SELECT `+assetCols+` FROM assets ORDER BY kind, name`)
 	if err != nil {
-		a.fail(w, err)
-		return
+		return p, err
 	}
-	assets := []Asset{}
 	for rows.Next() {
 		x, err := scanAsset(rows)
 		if err != nil {
 			rows.Close()
-			a.fail(w, err)
-			return
+			return p, err
 		}
-		assets = append(assets, x)
+		p.Assets = append(p.Assets, x)
 	}
 	rows.Close()
 
-	var total int64
-	missing := []string{}
-	for i := range assets {
-		rate, err := a.idrRate(r.Context(), assets[i].Currency, "")
+	for i := range p.Assets {
+		x := &p.Assets[i]
+		rate, err := a.idrRate(ctx, x.Currency, "")
 		if err != nil {
-			missing = append(missing, assets[i].Currency)
+			p.MissingRates = append(p.MissingRates, x.Currency)
 			continue
 		}
-		assets[i].Rate = rate
-		assets[i].ValueIDR = int64(assets[i].Balance*rate + 0.5)
-		total += assets[i].ValueIDR
+		x.Rate = rate
+		x.ValueIDR = int64(math.Round(x.Balance * rate))
+		p.TotalIDR += x.ValueIDR
+		basis := x.Balance
+		if x.Invested != nil {
+			basis = *x.Invested
+		}
+		p.InvestedIDR += int64(math.Round(basis * rate))
 	}
 
-	orows, err := a.db.Query(`SELECT ` + orderCols + ` FROM asset_orders o JOIN assets a ON a.id = o.asset_id
+	orows, err := a.db.QueryContext(ctx, `SELECT `+orderCols+` FROM asset_orders o JOIN assets a ON a.id = o.asset_id
 		WHERE o.status = 'pending' ORDER BY o.occurred_at DESC`)
+	if err != nil {
+		return p, err
+	}
+	defer orows.Close()
+	for orows.Next() {
+		o, err := scanOrder(orows)
+		if err != nil {
+			return p, err
+		}
+		p.Pending = append(p.Pending, o)
+	}
+
+	if len(p.Assets) > 0 && len(p.MissingRates) == 0 { // a partial total would show a fake dip
+		_, err = a.db.ExecContext(ctx, `INSERT OR REPLACE INTO asset_snapshots (date, total_idr, invested_idr) VALUES (?, ?, ?)`,
+			time.Now().In(wib).Format(time.DateOnly), p.TotalIDR, p.InvestedIDR)
+	}
+	return p, err
+}
+
+func (a *app) listAssets(w http.ResponseWriter, r *http.Request) {
+	p, err := a.portfolio(r.Context())
 	if err != nil {
 		a.fail(w, err)
 		return
 	}
-	defer orows.Close()
-	pending := []Order{}
-	for orows.Next() {
-		o, err := scanOrder(orows)
-		if err != nil {
+	writeJSON(w, http.StatusOK, p)
+}
+
+func (a *app) assetHistory(w http.ResponseWriter, r *http.Request) {
+	rows, err := a.db.Query(`SELECT date, total_idr, invested_idr FROM asset_snapshots ORDER BY date`)
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	defer rows.Close()
+	type point struct {
+		Date     string `json:"date"`
+		Total    int64  `json:"total"`
+		Invested int64  `json:"invested"`
+	}
+	out := []point{}
+	for rows.Next() {
+		var p point
+		if err := rows.Scan(&p.Date, &p.Total, &p.Invested); err != nil {
 			a.fail(w, err)
 			return
 		}
-		pending = append(pending, o)
+		out = append(out, p)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"assets": assets, "total_idr": total, "pending_orders": pending, "missing_rates": missing,
-	})
+	writeJSON(w, http.StatusOK, out)
+}
+
+// snapshotLoop records a snapshot every hour so days without app visits still get a point.
+func (a *app) snapshotLoop(ctx context.Context) {
+	for {
+		if _, err := a.portfolio(ctx); err != nil && ctx.Err() == nil {
+			slog.Error("snapshot", "err", err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(time.Hour):
+		}
+	}
 }
 
 func (a *app) createAsset(w http.ResponseWriter, r *http.Request) {

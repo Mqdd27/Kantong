@@ -24,6 +24,7 @@ export const s = $state({
   live: false,
   error: '',
   portfolio: { assets: [], total_idr: 0, pending_orders: [], missing_rates: [] },
+  history: [],
 })
 
 const byNewest = (a, b) => (a.occurred_at < b.occurred_at ? 1 : a.occurred_at > b.occurred_at ? -1 : b.id - a.id)
@@ -156,7 +157,8 @@ export const fmtCur = (amount, currency = 'IDR') =>
 
 export async function loadAssets() {
   try {
-    s.portfolio = await api('/assets')
+    s.portfolio = await api('/assets') // also records today's snapshot
+    s.history = await api('/assets/history')
   } catch (e) {
     fail(e)
   }

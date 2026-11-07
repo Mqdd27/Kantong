@@ -112,6 +112,13 @@
     background: var(--bg);
     color: var(--text);
   }
+  @media (min-width: 900px) {
+    dialog {
+      max-width: 480px;
+      margin: auto;
+      border-radius: 16px;
+    }
+  }
   dialog::backdrop {
     background: rgb(0 0 0 / 0.45);
   }

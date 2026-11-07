@@ -1,5 +1,6 @@
 <script>
   import { onMount } from 'svelte'
+  import PerfChart from './PerfChart.svelte'
   import { s, fmtIDR, fmtCur, fmtShort, loadAssets, CURRENCIES, saveAsset, deleteAsset } from './lib/store.svelte.js'
 
   const KINDS = {
@@ -43,13 +44,29 @@
   }
 </script>
 
+<div class="top">
 <section class="hero">
   <span>Total aset</span>
   <b>{fmtIDR.format(s.portfolio.total_idr)}</b>
+  {#if s.portfolio.total_idr > 0}
+    <ul class="alloc" aria-label="Alokasi per jenis">
+      {#each groups.filter((g) => g.total > 0) as g}
+        {@const pct = (g.total / s.portfolio.total_idr) * 100}
+        <li>
+          <span>{KINDS[g.kind]}</span>
+          <span class="bar"><span style:width="{pct}%"></span></span>
+          <span class="pct">{pct.toFixed(1)}%</span>
+        </li>
+      {/each}
+    </ul>
+  {/if}
   {#if s.portfolio.missing_rates.length}
     <small class="warn">Kurs belum tersedia: {s.portfolio.missing_rates.join(', ')} (tidak dihitung)</small>
   {/if}
 </section>
+
+<PerfChart points={s.history} />
+</div>
 
 {#if s.portfolio.pending_orders.length}
   <h3>Order menunggu konfirmasi</h3>
@@ -62,7 +79,9 @@
   {/each}
 {/if}
 
+<div class="groups">
 {#each groups as g}
+  <div class="group">
   <h3><span>{KINDS[g.kind]}</span><span>{fmtIDR.format(g.total)}</span></h3>
   {#each g.items as a}
     <button class="row" onclick={() => openEdit(a)}>
@@ -82,9 +101,11 @@
       </span>
     </button>
   {/each}
+  </div>
 {:else}
   <p class="empty">Belum ada aset. Tambah rekening, valas, saham (total nilai), obligasi, SBN, dll.</p>
 {/each}
+</div>
 
 <button class="add" onclick={() => openEdit()}>+ Tambah aset</button>
 
@@ -118,6 +139,30 @@
 {/if}
 
 <style>
+  .top {
+    display: grid;
+    gap: 8px;
+  }
+  .top > :global(*) {
+    min-width: 0; /* let the chart shrink with the column */
+  }
+  .groups {
+    display: grid;
+    gap: 0 32px;
+  }
+  @media (min-width: 900px) {
+    .top {
+      grid-template-columns: minmax(240px, 1fr) 2.4fr;
+      gap: 16px;
+      align-items: start;
+    }
+    .groups {
+      grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    }
+    .add {
+      max-width: 340px;
+    }
+  }
   .hero {
     display: grid;
     gap: 4px;
@@ -126,12 +171,43 @@
     border-radius: 14px;
     margin-bottom: 8px;
   }
-  .hero span {
+  .hero > span {
     color: var(--muted);
     font-size: 13px;
   }
   .hero b {
     font-size: 28px;
+    font-variant-numeric: tabular-nums;
+  }
+  .alloc {
+    list-style: none;
+    padding: 0;
+    margin: 12px 0 0;
+    display: grid;
+    gap: 8px;
+  }
+  .alloc li {
+    display: grid;
+    grid-template-columns: 84px 1fr 48px;
+    gap: 8px;
+    align-items: center;
+    font-size: 13px;
+  }
+  .alloc .bar {
+    height: 6px;
+    border-radius: 3px;
+    background: var(--bg);
+    overflow: hidden;
+  }
+  .alloc .bar span {
+    display: block;
+    height: 100%;
+    border-radius: 3px;
+    background: var(--series-1);
+  }
+  .alloc .pct {
+    text-align: right;
+    color: var(--muted);
     font-variant-numeric: tabular-nums;
   }
   .warn {
@@ -205,6 +281,13 @@
     border-radius: 16px 16px 0 0;
     background: var(--bg);
     color: var(--text);
+  }
+  @media (min-width: 900px) {
+    dialog {
+      max-width: 480px;
+      margin: auto;
+      border-radius: 16px;
+    }
   }
   dialog::backdrop {
     background: rgb(0 0 0 / 0.45);

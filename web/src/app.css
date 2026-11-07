@@ -76,3 +76,14 @@ button.primary {
 button:disabled {
   opacity: 0.5;
 }
+
+:root {
+  --series-1: #2a78d6; /* nilai */
+  --series-2: #eb6834; /* modal */
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --series-1: #3987e5;
+    --series-2: #d95926;
+  }
+}
