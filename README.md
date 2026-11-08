@@ -56,7 +56,7 @@ Email bank/broker ──▶ mailbox (IMAP, read-only)
 
 Skill agent-nya ([Hermes](https://github.com/NousResearch/hermes-agent)) ada di [`hermes/`](hermes). Cara menyambungkan email bank ke Hermes, dari bikin app password sampai cron, ada di **[docs/hermes-email.md](docs/hermes-email.md)**.
 
-Skill kedua, [`hermes/finance-assets`](hermes/finance-assets), mengisi aset dari screenshot portofolio: kirim screenshot Bibit/Stockbit/m-banking ke Hermes di Telegram, cek ringkasannya, balas "ok", lalu aset dibuat atau di-update. Pasang dengan `cp -R hermes/finance-assets ~/.hermes/skills/` (pakai env `FINANCE_API_URL`/`FINANCE_API_TOKEN` yang sama).
+Skill kedua, [`hermes/finance-assets`](hermes/finance-assets), mengisi aset dari screenshot portofolio yang kamu kirim ke Hermes di Telegram. Panduannya ada di **[docs/hermes-assets.md](docs/hermes-assets.md)**.
 
 ## Jalanin
 
