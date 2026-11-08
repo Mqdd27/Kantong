@@ -147,8 +147,8 @@
       <span class="main">
         <span>{a.name}</span>
         <span class="meta">
-          {#if a.currency !== 'IDR'}{fmtCur(a.balance, a.currency)} · 1 {a.currency} = {fmtIDR.format(a.rate)}{/if}
-          {#if a.invested}{a.currency !== 'IDR' ? ' · ' : ''}modal {fmtCur(a.invested, a.currency)}{/if}
+          {#if a.currency !== 'IDR'}{fmtCur(a.balance, a.currency)} · 1 {a.currency === 'XAU' ? 'gram' : a.currency} = {fmtIDR.format(a.rate)}{/if}
+          {#if a.invested}{a.currency !== 'IDR' ? ' · ' : ''}modal {fmtCur(a.invested, a.currency === 'XAU' ? 'IDR' : a.currency)}{/if}
         </span>
         {#if a.return_pct != null && RETURNS.has(a.kind)}<span class="meta proj">{proj(a)}</span>{/if}
         {#if a.target}
@@ -165,7 +165,7 @@
       <span class="val">
         {fmtIDR.format(a.value_idr)}
         {#if a.invested}
-          {@const pl = (a.balance - a.invested) / a.invested}
+          {@const pl = ((a.currency === 'XAU' ? a.value_idr : a.balance) - a.invested) / a.invested}
           <small class:in={pl >= 0} class:out={pl < 0}>{pl >= 0 ? '+' : ''}{(pl * 100).toFixed(1)}%</small>
         {/if}
       </span>
@@ -189,13 +189,16 @@
           <select bind:value={f.kind}>{#each Object.entries(KINDS) as [k, v]}<option value={k}>{v}</option>{/each}</select>
         </label>
         <label>Mata uang
-          <select bind:value={f.currency}>{#each CURRENCIES as c}<option>{c}</option>{/each}</select>
+          <select bind:value={f.currency}>{#each CURRENCIES as c}<option value={c}>{c === 'XAU' ? 'Emas (gram)' : c}</option>{/each}</select>
         </label>
       </div>
-      <label>Nilai sekarang ({f.currency})
+      {#if f.kind === 'gold' && f.currency !== 'XAU'}
+        <small class="hint">Pilih mata uang <b>Emas (gram)</b> lalu isi jumlah gram, biar nilainya ikut harga emas harian.</small>
+      {/if}
+      <label>{f.currency === 'XAU' ? 'Jumlah (gram)' : `Nilai sekarang (${f.currency})`}
         <input type="number" inputmode="decimal" step="any" bind:value={f.balance} required />
       </label>
-      <label>Modal / total disetor ({f.currency}), opsional
+      <label>Modal / total disetor ({f.currency === 'XAU' ? 'IDR' : f.currency}), opsional
         <input type="number" inputmode="decimal" step="any" bind:value={f.invested} />
       </label>
       {#if BONDS.has(f.kind)}
@@ -234,7 +237,7 @@
           {/if}
         {/if}
         <div class="two">
-          <label>Target tabungan ({f.currency}), opsional
+          <label>Target tabungan ({f.currency === 'XAU' ? 'gram' : f.currency}), opsional
             <input type="number" inputmode="decimal" step="any" min="0" bind:value={f.target} />
           </label>
           <label>Tercapai pada

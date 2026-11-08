@@ -31,9 +31,9 @@ var migrationsFS embed.FS
 var wib = time.FixedZone("WIB", 7*3600)
 
 type config struct {
-	port, dbPath, apiToken, appPassword, sessionSecret, fxURL string
-	tgAPI, tgToken, tgChat                                    string // Telegram notifications; off when token/chat empty
-	insecureCookie                                            bool   // COOKIE_SECURE=false: allow login over plain HTTP (no PWA install/push then)
+	port, dbPath, apiToken, appPassword, sessionSecret, fxURL, goldURL string
+	tgAPI, tgToken, tgChat                                             string // Telegram notifications; off when token/chat empty
+	insecureCookie                                                     bool   // COOKIE_SECURE=false: allow login over plain HTTP (no PWA install/push then)
 }
 
 type app struct {
@@ -52,6 +52,7 @@ func main() {
 		sessionSecret:  os.Getenv("SESSION_SECRET"),
 		insecureCookie: os.Getenv("COOKIE_SECURE") == "false",
 		fxURL:          env("FX_URL", "https://api.frankfurter.dev"),
+		goldURL:        env("GOLD_URL", "https://api.gold-api.com"),
 		tgAPI:          env("TELEGRAM_API", "https://api.telegram.org"),
 		tgToken:        os.Getenv("TELEGRAM_BOT_TOKEN"),
 		tgChat:         os.Getenv("TELEGRAM_CHAT_ID"),

@@ -156,8 +156,10 @@ export async function login(password) {
 }
 
 // ---- assets ----
-export const CURRENCIES = ['IDR', 'USD', 'SGD', 'CNY', 'JPY', 'KRW', 'EUR', 'AUD', 'GBP', 'HKD', 'MYR', 'THB']
+export const CURRENCIES = ['IDR', 'USD', 'SGD', 'CNY', 'JPY', 'KRW', 'EUR', 'AUD', 'GBP', 'HKD', 'MYR', 'THB', 'XAU']
+// XAU balances are grams of gold (priced per gram by the API)
 export const fmtCur = (amount, currency = 'IDR') =>
+  currency === 'XAU' ? `${new Intl.NumberFormat('id-ID', { maximumFractionDigits: 4 }).format(amount)} gram` :
   new Intl.NumberFormat('id-ID', { style: 'currency', currency, maximumFractionDigits: currency === 'IDR' ? 0 : 2 }).format(amount)
 
 export async function loadAssets() {

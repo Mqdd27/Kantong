@@ -18,11 +18,16 @@ const token = "test-token"
 func newTestServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	fx := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/price/XAU" {
+			w.Write([]byte(`{"price":3110.34768}`)) // 100 USD per gram
+			return
+		}
 		w.Write([]byte(`{"rates":{"USD":0.00005,"SGD":0.0001}}`)) // 1 USD = 20000, 1 SGD = 10000
 	}))
 	t.Cleanup(fx.Close)
 	a, err := newApp(config{
 		fxURL:         fx.URL,
+		goldURL:       fx.URL,
 		dbPath:        filepath.Join(t.TempDir(), "t.db"),
 		apiToken:      token,
 		appPassword:   "pw",
@@ -338,5 +343,19 @@ func TestAssetReturn(t *testing.T) {
 	}
 	if c := call(t, srv, "PATCH", "/api/assets/"+strconv.FormatInt(x.ID, 10), `{"payout":2}`, nil); c != 400 {
 		t.Fatalf("bad payout accepted: %d", c)
+	}
+}
+
+func TestGoldGrams(t *testing.T) {
+	srv := newTestServer(t)
+	call(t, srv, "POST", "/api/assets", `{"name":"Emas","kind":"gold","currency":"XAU","balance":1.5,"invested":2500000}`, nil)
+	var p struct {
+		Assets      []Asset `json:"assets"`
+		TotalIDR    int64   `json:"total_idr"`
+		InvestedIDR int64   `json:"invested_idr"`
+	}
+	call(t, srv, "GET", "/api/assets", "", &p)
+	if p.Assets[0].Rate != 2e6 || p.TotalIDR != 3e6 || p.InvestedIDR != 2.5e6 { // 1.5 g × Rp2.000.000
+		t.Fatalf("%+v", p)
 	}
 }

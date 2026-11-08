@@ -20,7 +20,7 @@ Satu binary Go (API + SQLite + SSE + PWA Svelte yang di-embed), image Docker ±2
 - **Multi-currency**: transaksi dalam USD/SGD/JPY/... disimpan nominal aslinya, lalu dikonversi ke IDR pakai kurs hari itu ([frankfurter.dev](https://frankfurter.dev), data ECB).
 - **Budget bulanan**: total dan per kategori, berlaku terus ke bulan berikutnya sampai diubah. Ada sisa bisa dibelanjakan (dikurangi tagihan yang akan datang), jatah per hari, dan penanda posisi bulan.
 - **Transaksi berulang**: gaji, langganan, cicilan, parkir kantor. Mingguan dengan pilihan hari (mis. Sen–Jum), bulanan dengan pilihan bulan, atau tahunan. Bisa dicatat otomatis atau manual (Catat / Lewati).
-- **Aset & portofolio**: rekening, valas, saham (total), obligasi, SBN, reksa dana, emas, kripto. Ada total kekayaan dalam IDR, alokasi per jenis, untung/rugi vs modal, target tabungan, proyeksi return obligasi/SBN (kupon dari nominal tiap bulan/3/6/12 bulan atau tanpa kupon, plus selisih pelunasan, bersih pajak 10%) sampai jatuh tempo, bunga rekening bank, dan proyeksi return reksa dana.
+- **Aset & portofolio**: rekening, valas, saham (total), obligasi, SBN, reksa dana, emas, kripto. Ada total kekayaan dalam IDR, alokasi per jenis, untung/rugi vs modal, target tabungan, proyeksi return obligasi/SBN (kupon dari nominal tiap bulan/3/6/12 bulan atau tanpa kupon, plus selisih pelunasan, bersih pajak 10%) sampai jatuh tempo, bunga rekening bank, dan emas dalam gram yang nilainya ikut harga emas harian, dan proyeksi return reksa dana.
 - **Order investasi dari email**: konfirmasi pembelian dicatat *pending*, lalu email berhasil/gagal menyelesaikannya dan meng-update saldo aset.
 - **Kalender**: pengeluaran per tanggal dengan warna sesuai besarnya, tagihan berulang yang akan datang, jumlah hari tanpa belanja, dan daftar transaksi per hari.
 - **Analitik**: 6 bulan masuk vs keluar, tingkat tabungan, dan kategori bulan ini dibanding rata-ratanya.
@@ -75,6 +75,7 @@ curl http://127.0.0.1:8080/healthz   # -> ok
 | `COOKIE_SECURE` | `true` | Set `false` hanya kalau diakses lewat HTTP biasa (tanpa HTTPS, PWA nggak bisa di-install) |
 | `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | – | Notifikasi transaksi dari email; kosong = mati |
 | `FX_URL` | `https://api.frankfurter.dev` | Sumber kurs |
+| `GOLD_URL` | `https://api.gold-api.com` | Harga emas spot (aset mata uang `XAU` = gram) |
 | `DB_PATH` / `PORT` | `/data/money.db` / `8080` | Di dalam container |
 
 Perubahan `.env` baru terpakai setelah `docker compose up -d --force-recreate`.

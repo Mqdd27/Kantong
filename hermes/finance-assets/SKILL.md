@@ -29,6 +29,7 @@ Config comes from `~/.hermes/.env`: `FINANCE_API_URL`, `FINANCE_API_TOKEN` (same
 | Government bond FR/PBS/ORI/SR/ST/SBR | `kind:"sbn"`; `balance` = modal + total keuntungan (current value); `invested` = Total Modal Investasi; `face` = units × 1.000.000 (nominal); `return_pct` = **Kupon / Tahun** (NOT yield); `payout` = 6 for FR/PBS, 1 for ORI/SR/ST/SBR; `maturity` = Jatuh Tempo as YYYY-MM-DD |
 | Corporate bond | `kind:"bond"`, same fields; `payout` from the coupon schedule, 0 if no coupon |
 | Mutual fund | `kind:"mutual_fund"`; `balance` = nilai sekarang; `invested` = modal; `return_pct` only if the user gives an expected return |
+| Gold (Pegadaian, Antam, Bibit Emas…) | `kind:"gold"`, `currency:"XAU"`; `balance` = **grams** (Kantong prices it daily); `invested` = modal in **IDR** |
 | Stock (total) | `kind:"stock"`; `balance`, `invested` |
 | Bank / e-wallet | `balance`; for bank `return_pct` = bunga % per tahun if shown |
 

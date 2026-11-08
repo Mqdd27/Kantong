@@ -136,11 +136,14 @@ func (a *app) portfolio(ctx context.Context) (p portfolio, err error) {
 		x.Rate = rate
 		x.ValueIDR = int64(math.Round(x.Balance * rate))
 		p.TotalIDR += x.ValueIDR
-		basis := x.Balance
+		basis := x.Balance * rate
 		if x.Invested != nil {
-			basis = *x.Invested
+			basis = *x.Invested * rate
+			if x.Currency == "XAU" { // gold modal is entered in IDR, balance in grams
+				basis = *x.Invested
+			}
 		}
-		p.InvestedIDR += int64(math.Round(basis * rate))
+		p.InvestedIDR += int64(math.Round(basis))
 	}
 
 	orows, err := a.db.QueryContext(ctx, `SELECT `+orderCols+` FROM asset_orders o JOIN assets a ON a.id = o.asset_id
