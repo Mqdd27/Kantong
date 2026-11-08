@@ -1,4 +1,6 @@
-# Kantong
+<p align="center"><img src="docs/logo.png" width="96" alt="" /></p>
+
+<h1 align="center">Kantong</h1>
 
 Money manager pribadi yang self-hosted. Notifikasi transaksi dari email bank/broker dibaca otomatis oleh agent, disimpan lewat API, dan langsung muncul realtime di PWA.
 
