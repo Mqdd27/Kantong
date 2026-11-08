@@ -330,7 +330,7 @@ func TestRulesNotifyBackup(t *testing.T) {
 func TestAssetReturn(t *testing.T) {
 	srv := newTestServer(t)
 	var x Asset
-	if c := call(t, srv, "POST", "/api/assets", `{"name":"PBS030","kind":"bond","balance":5000000,"invested":5000000,"return_pct":5.9,"maturity":"2028-07-15","payout":6}`, &x); c != 201 || x.ReturnPct == nil || *x.ReturnPct != 5.9 || *x.Maturity != "2028-07-15" || x.Payout != 6 {
+	if c := call(t, srv, "POST", "/api/assets", `{"name":"PBS030","kind":"bond","balance":5000000,"invested":5000000,"return_pct":5.9,"maturity":"2028-07-15","payout":6,"face":5000000}`, &x); c != 201 || x.ReturnPct == nil || *x.ReturnPct != 5.9 || *x.Maturity != "2028-07-15" || x.Payout != 6 || *x.Face != 5e6 {
 		t.Fatalf("%d %+v", c, x)
 	}
 	if c := call(t, srv, "PATCH", "/api/assets/"+strconv.FormatInt(x.ID, 10), `{"maturity":"15-07-2028"}`, nil); c != 400 {
