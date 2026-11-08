@@ -1,5 +1,5 @@
 <script>
-  import { fmtIDR } from './lib/store.svelte.js'
+  import { fmtIDR, mask } from './lib/store.svelte.js'
 
   /** points: [{date: 'YYYY-MM-DD', total, invested}] sorted by date */
   let { points } = $props()
@@ -9,7 +9,8 @@
   let w = $state(600)
   let hover = $state(null) // index into shown
 
-  const compact = new Intl.NumberFormat('id-ID', { notation: 'compact', maximumFractionDigits: 1 })
+  const compactRaw = new Intl.NumberFormat('id-ID', { notation: 'compact', maximumFractionDigits: 1 })
+  const compact = { format: (n) => mask(compactRaw.format(n)) }
   const fmtD = new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'short', year: '2-digit', timeZone: 'UTC' })
   const day = (d) => fmtD.format(new Date(d + 'T00:00:00Z'))
 

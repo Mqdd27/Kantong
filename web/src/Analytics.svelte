@@ -1,10 +1,11 @@
 <script>
-  import { s, fmtIDR, fmtMonth, shiftMonth } from './lib/store.svelte.js'
+  import { s, fmtIDR, fmtMonth, shiftMonth, mask } from './lib/store.svelte.js'
   import { api } from './lib/api.js'
 
   const N = 6
   const SAVING = new Set(['Investasi']) // out-categories that are saving, not spending
-  const compact = new Intl.NumberFormat('id-ID', { notation: 'compact', maximumFractionDigits: 1 })
+  const compactRaw = new Intl.NumberFormat('id-ID', { notation: 'compact', maximumFractionDigits: 1 })
+  const compact = { format: (n) => mask(compactRaw.format(n)) }
   const shortMonth = new Intl.DateTimeFormat('id-ID', { month: 'short', timeZone: 'UTC' })
   const mlabel = (m) => shortMonth.format(new Date(m + '-15T00:00:00Z'))
 

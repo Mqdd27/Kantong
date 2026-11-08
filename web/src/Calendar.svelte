@@ -1,12 +1,13 @@
 <script>
-  import { s, fmtIDR, fmtDay } from './lib/store.svelte.js'
+  import { s, fmtIDR, fmtDay, mask } from './lib/store.svelte.js'
   import MonthBar from './MonthBar.svelte'
   import ViewToggle from './ViewToggle.svelte'
   import TxRow from './TxRow.svelte'
 
   let { open } = $props()
 
-  const short = new Intl.NumberFormat('id-ID', { notation: 'compact', maximumFractionDigits: 1 })
+  const shortRaw = new Intl.NumberFormat('id-ID', { notation: 'compact', maximumFractionDigits: 1 })
+  const short = { format: (n) => mask(shortRaw.format(n)) }
   const today = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10)
   const WEEK = ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min']
 

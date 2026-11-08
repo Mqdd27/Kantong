@@ -1,7 +1,17 @@
 import { api, AuthError } from './api.js'
 
 const TZ = 'Asia/Jakarta'
-export const fmtIDR = new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 })
+const idr = new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 })
+// eye toggle: every money display goes through mask(); remembered per device
+let hidden = false
+try { hidden = localStorage.hide === '1' } catch {}
+export const view = $state({ hide: hidden })
+export function toggleHide() {
+  view.hide = !view.hide
+  try { localStorage.hide = view.hide ? '1' : '' } catch {}
+}
+export const mask = (str) => (view.hide ? '••••••' : str)
+export const fmtIDR = { format: (n) => mask(idr.format(n)) }
 export const fmtNum = new Intl.NumberFormat('id-ID')
 export const fmtDay = new Intl.DateTimeFormat('id-ID', { weekday: 'long', day: 'numeric', month: 'long', timeZone: TZ })
 export const fmtShort = new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: TZ })
@@ -158,9 +168,9 @@ export async function login(password) {
 // ---- assets ----
 export const CURRENCIES = ['IDR', 'USD', 'SGD', 'CNY', 'JPY', 'KRW', 'EUR', 'AUD', 'GBP', 'HKD', 'MYR', 'THB', 'XAU']
 // XAU balances are grams of gold (priced per gram by the API)
-export const fmtCur = (amount, currency = 'IDR') =>
+export const fmtCur = (amount, currency = 'IDR') => mask(
   currency === 'XAU' ? `${new Intl.NumberFormat('id-ID', { maximumFractionDigits: 4 }).format(amount)} gram` :
-  new Intl.NumberFormat('id-ID', { style: 'currency', currency, maximumFractionDigits: currency === 'IDR' ? 0 : 2 }).format(amount)
+  new Intl.NumberFormat('id-ID', { style: 'currency', currency, maximumFractionDigits: currency === 'IDR' ? 0 : 2 }).format(amount))
 
 export async function loadAssets() {
   try {
