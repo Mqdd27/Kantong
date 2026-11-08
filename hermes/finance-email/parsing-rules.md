@@ -51,6 +51,9 @@ Planned defaults (from user spec, not from emails):
 - Beli reksadana/saham/obligasi -> out / Investasi; setor/tarik RDN or top-up own account -> transfer / Transfer.
 - BCA/KlikBCA transfer to person -> out / Lainnya unless merchant is clear; incoming -> in / Transfer Masuk.
 - Account name = Jago, BCA, SeaBank, Stockbit, Bibit, Krom by sender.
+- E-wallet top-up (ShopeePay, GoPay, OVO, DANA) from any bank: the user spends it right away (e.g. ShopeeFood), so it is NOT a transfer.
+  -> type out, merchant = the e-wallet app (e.g. "ShopeePay"), note "Top up", category = best guess from context (Makan if nothing else is known),
+  needs_review = true so the user picks the real category once in Review. Never also record the purchase made with that balance.
 
 ## Foreign currency (any sender)
 - Card/online charge in another currency (Claude/Anthropic, OpenAI, Apple, Google, etc. in USD; forex pocket spend in SGD/JPY/CNY/KRW...):
