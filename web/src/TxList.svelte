@@ -3,6 +3,7 @@
   import { api } from './lib/api.js'
   import MonthBar from './MonthBar.svelte'
   import TxRow from './TxRow.svelte'
+  import ViewToggle from './ViewToggle.svelte'
 
   let { open } = $props()
 
@@ -32,6 +33,8 @@
     return groups
   })
 </script>
+
+<ViewToggle active="tx" />
 
 <div class="tools">
   <input type="search" bind:value={q} placeholder="Cari merchant, catatan, kategori…" aria-label="Cari transaksi" />

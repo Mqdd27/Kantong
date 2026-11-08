@@ -9,6 +9,7 @@
   import Budget from './Budget.svelte'
   import Analytics from './Analytics.svelte'
   import Rules from './Rules.svelte'
+  import Calendar from './Calendar.svelte'
   import TxSheet from './TxSheet.svelte'
 
   let route = $state(location.hash.slice(1) || '/')
@@ -18,6 +19,8 @@
   let sheet = $state(null)
   const open = (tx) => (sheet = { tx })
 
+  let wide = $state(matchMedia('(min-width: 900px)').matches)
+  matchMedia('(min-width: 900px)').addEventListener('change', (e) => (wide = e.matches))
   const reviewCount = $derived(s.txs.filter((t) => t.needs_review).length)
 
   $effect(() => {
@@ -27,6 +30,7 @@
   const tabs = [
     ['/', 'Beranda'],
     ['/tx', 'Transaksi'],
+    ['/calendar', 'Kalender'], // mobile: toggle on Transaksi
     ['/budget', 'Budget'],
     ['/analytics', 'Analitik'],
     ['/assets', 'Aset'],
@@ -38,7 +42,7 @@
 {#if !s.authed}
   <Login />
 {:else}
-  <main class:narrow={route === '/tx' || route === '/review' || route === '/rules'}>
+  <main class:narrow={route === '/tx' || route === '/review' || route === '/rules' || route === '/calendar'}>
     {#if reviewCount && (route === '/' || route === '/tx')}
       <a class="banner" href="#/review">⚠︎ {reviewCount} transaksi perlu direview ›</a>
     {/if}
@@ -52,6 +56,8 @@
       <Budget />
     {:else if route === '/analytics'}
       <Analytics />
+    {:else if route === '/calendar'}
+      <Calendar {open} />
     {:else if route === '/rules'}
       <Rules />
     {:else}
@@ -67,7 +73,7 @@
     <span class="brand">Kantong</span>
     <button class="primary new" onclick={() => (sheet = {})}>+ Transaksi</button>
     {#each tabs as [href, label]}
-      <a href={'#' + href} class:active={route === href} class:desk={href === '/review' || href === '/rules'}>
+      <a href={'#' + href} class:active={route === href || (href === '/tx' && route === '/calendar' && !wide)} class:desk={href === '/review' || href === '/rules' || href === '/calendar'}>
         {label}
         {#if href === '/review' && reviewCount}<span class="count">{reviewCount}</span>{/if}
       </a>
