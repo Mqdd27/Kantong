@@ -186,7 +186,7 @@
       <label>Nama <input bind:value={f.name} required placeholder="mis. Jago Pocket SGD, Stockbit, ORI027" /></label>
       <div class="two">
         <label>Jenis
-          <select bind:value={f.kind}>{#each Object.entries(KINDS) as [k, v]}<option value={k}>{v}</option>{/each}</select>
+          <select bind:value={f.kind} onchange={() => { if (f.kind === 'gold' && f.currency === 'IDR') f.currency = 'XAU' }}>{#each Object.entries(KINDS) as [k, v]}<option value={k}>{v}</option>{/each}</select>
         </label>
         <label>Mata uang
           <select bind:value={f.currency}>{#each CURRENCIES as c}<option value={c}>{c === 'XAU' ? 'Emas (gram)' : c}</option>{/each}</select>
