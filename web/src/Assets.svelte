@@ -10,8 +10,9 @@
 
   const BONDS = new Set(['bond', 'sbn']) // payout + maturity instead of a savings goal
   const PAYOUT = { 1: 'bulan', 3: '3 bulan', 6: '6 bulan', 12: 'tahun' } // months between coupons; 0 = none
-  const RETURNS = new Set(['bond', 'sbn', 'mutual_fund']) // only these get a return projection
+  const RETURNS = new Set(['bond', 'sbn', 'mutual_fund', 'bank']) // only these get a return projection
   const TAX = 0.1 // final tax on bond/SBN coupons for individuals
+  const BANK_TAX = 0.2 // final tax on savings/deposit interest
 
   onMount(loadAssets)
 
@@ -58,6 +59,10 @@
   function proj(a) {
     const r = a.return_pct / 100, pct = `Return ${pctFmt.format(a.return_pct)}%/thn`
     const end = a.maturity && fmtMon.format(new Date(a.maturity + 'T00:00:00Z'))
+    if (a.kind === 'bank') {
+      const month = (a.balance * r * (1 - BANK_TAX)) / 12
+      return `Bunga ${pctFmt.format(a.return_pct)}%/thn ≈ ${fmtCur(month, a.currency)}/bln bersih pajak · 1 thn ≈ ${fmtCur(month * 12, a.currency)}`
+    }
     if (BONDS.has(a.kind) && a.payout) {
       const per = ((a.invested ?? a.balance) * r * a.payout * (1 - TAX)) / 12
       const n = a.maturity ? Math.floor(monthsTo(a.maturity) / a.payout) : 0
@@ -204,9 +209,16 @@
         <small class="hint">Contoh: SBN ritel (ORI/SR/ST) tiap bulan, FR/PBS tiap 6 bulan. Dihitung dari modal, dipotong pajak 10%.</small>
       {:else}
         {#if RETURNS.has(f.kind)}
-          <label>Proyeksi return (% per tahun), opsional
-            <input type="number" inputmode="decimal" step="any" bind:value={f.return_pct} placeholder="mis. 4,5 untuk RDPU" />
-          </label>
+          {#if f.kind === 'bank'}
+            <label>Bunga (% per tahun), opsional
+              <input type="number" inputmode="decimal" step="any" bind:value={f.return_pct} placeholder="mis. 3" />
+            </label>
+            <small class="hint">Dihitung dari nilai sekarang, dipotong pajak bunga 20%.</small>
+          {:else}
+            <label>Proyeksi return (% per tahun), opsional
+              <input type="number" inputmode="decimal" step="any" bind:value={f.return_pct} placeholder="mis. 4,5 untuk RDPU" />
+            </label>
+          {/if}
         {/if}
         <div class="two">
           <label>Target tabungan ({f.currency}), opsional
