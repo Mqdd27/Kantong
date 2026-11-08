@@ -8,7 +8,8 @@
     sbn: 'SBN', mutual_fund: 'Reksa dana', gold: 'Emas', crypto: 'Kripto', other: 'Lainnya',
   }
 
-  const BONDS = new Set(['bond', 'sbn']) // coupon + maturity instead of a savings goal
+  const BONDS = new Set(['bond', 'sbn']) // payout + maturity instead of a savings goal
+  const PAYOUT = { 1: 'bulan', 3: '3 bulan', 6: '6 bulan', 12: 'tahun' } // months between coupons; 0 = none
   const NO_RETURN = new Set(['ewallet', 'cash'])
   const TAX = 0.1 // final tax on bond/SBN coupons for individuals
 
@@ -35,7 +36,7 @@
   function openEdit(a) {
     f = a
       ? { ...a, invested: a.invested ?? '', target: a.target ?? '', target_date: a.target_date ?? '', return_pct: a.return_pct ?? '', maturity: a.maturity ?? '' }
-      : { name: '', kind: 'bank', currency: 'IDR', balance: '', invested: '', note: '', target: '', target_date: '', return_pct: '', maturity: '' }
+      : { name: '', kind: 'bank', currency: 'IDR', balance: '', invested: '', note: '', target: '', target_date: '', return_pct: '', maturity: '', payout: 0 }
     edit = a ?? {}
   }
   const fmtMon = new Intl.DateTimeFormat('id-ID', { month: 'short', year: 'numeric', timeZone: 'UTC' })
@@ -53,16 +54,21 @@
     return Math.max(0, (t.getUTCFullYear() - now.getUTCFullYear()) * 12 + t.getUTCMonth() - now.getUTCMonth())
   }
   const pctFmt = new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 })
-  // expected return: net monthly coupon (bonds) or projected value (everything else)
+  // expected return: net coupon per payout (bonds that pay), value at maturity (bonds that don't), or projected value
   function proj(a) {
-    const r = a.return_pct / 100
-    if (BONDS.has(a.kind)) {
-      const month = ((a.invested ?? a.balance) * r * (1 - TAX)) / 12
-      const left = a.maturity ? monthsTo(a.maturity) : 0
-      return `Kupon ${pctFmt.format(a.return_pct)}%/thn ≈ ${fmtCur(month, a.currency)}/bln bersih` +
-        (a.maturity ? ` · jatuh tempo ${fmtMon.format(new Date(a.maturity + 'T00:00:00Z'))}, sisa kupon ≈ ${fmtCur(month * left, a.currency)}` : '')
+    const r = a.return_pct / 100, pct = `Return ${pctFmt.format(a.return_pct)}%/thn`
+    const end = a.maturity && fmtMon.format(new Date(a.maturity + 'T00:00:00Z'))
+    if (BONDS.has(a.kind) && a.payout) {
+      const per = ((a.invested ?? a.balance) * r * a.payout * (1 - TAX)) / 12
+      const n = a.maturity ? Math.floor(monthsTo(a.maturity) / a.payout) : 0
+      return `${pct} · kupon ≈ ${fmtCur(per, a.currency)} tiap ${PAYOUT[a.payout]} (bersih pajak)` +
+        (n ? ` · ${n}× lagi s.d. ${end}, total ≈ ${fmtCur(per * n, a.currency)}` : '')
     }
-    let txt = `Proyeksi ${pctFmt.format(a.return_pct)}%/thn: 1 thn ≈ ${fmtCur(a.balance * (1 + r), a.currency)}`
+    if (BONDS.has(a.kind) && a.maturity) {
+      const gain = a.balance * ((1 + r) ** (monthsTo(a.maturity) / 12) - 1) * (1 - TAX)
+      return `${pct}, tanpa kupon · di jatuh tempo ${end} ≈ ${fmtCur(a.balance + gain, a.currency)} (bersih pajak)`
+    }
+    let txt = `${pct} · 1 thn ≈ ${fmtCur(a.balance * (1 + r), a.currency)}`
     if (a.target_date) txt += ` · ${fmtMon.format(new Date(a.target_date + 'T00:00:00Z'))} ≈ ${fmtCur(a.balance * (1 + r) ** (monthsTo(a.target_date) / 12), a.currency)}`
     return txt
   }
@@ -74,7 +80,8 @@
       target: !BONDS.has(f.kind) && Number(f.target) > 0 ? Number(f.target) : null,
       target_date: !BONDS.has(f.kind) && f.target ? f.target_date || null : null,
       return_pct: NO_RETURN.has(f.kind) || f.return_pct === '' || f.return_pct == null ? null : Number(f.return_pct),
-      maturity: BONDS.has(f.kind) ? f.maturity || null : null }
+      maturity: BONDS.has(f.kind) ? f.maturity || null : null,
+      payout: BONDS.has(f.kind) ? Number(f.payout) || 0 : 0 }
     if (await saveAsset(edit.id, body)) dialog.close()
   }
   async function del() {
@@ -180,14 +187,21 @@
       </label>
       {#if BONDS.has(f.kind)}
         <div class="two">
-          <label>Kupon (% per tahun)
+          <label>Return (% per tahun)
             <input type="number" inputmode="decimal" step="any" bind:value={f.return_pct} placeholder="mis. 6,25" />
           </label>
-          <label>Jatuh tempo
-            <input type="date" bind:value={f.maturity} />
+          <label>Kupon dibayar
+            <select bind:value={f.payout}>
+              <option value={1}>Tiap bulan</option>
+              <option value={3}>Tiap 3 bulan</option>
+              <option value={6}>Tiap 6 bulan</option>
+              <option value={12}>Tiap tahun</option>
+              <option value={0}>Tidak ada kupon</option>
+            </select>
           </label>
         </div>
-        <small class="hint">Kupon dihitung dari modal (nominal), dipotong pajak 10%.</small>
+        <label>Jatuh tempo <input type="date" bind:value={f.maturity} /></label>
+        <small class="hint">Contoh: SBN ritel (ORI/SR/ST) tiap bulan, FR/PBS tiap 6 bulan. Dihitung dari modal, dipotong pajak 10%.</small>
       {:else}
         {#if !NO_RETURN.has(f.kind)}
           <label>Proyeksi return (% per tahun), opsional

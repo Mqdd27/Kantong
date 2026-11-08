@@ -23,6 +23,7 @@ type Asset struct {
 	TargetDate *string  `json:"target_date"` // YYYY-MM-DD
 	ReturnPct  *float64 `json:"return_pct"`  // expected % per year (bond coupon/yield, fund return)
 	Maturity   *string  `json:"maturity"`    // YYYY-MM-DD, bonds/SBN
+	Payout     int      `json:"payout"`      // months between coupons (1, 3, 6, 12); 0 = none
 	UpdatedAt  string   `json:"updated_at"`
 	// computed for responses
 	Rate     float64 `json:"rate"`      // IDR per unit of Currency
@@ -45,11 +46,11 @@ type Order struct {
 var assetKinds = map[string]bool{"bank": true, "ewallet": true, "forex": true, "cash": true, "stock": true,
 	"bond": true, "sbn": true, "mutual_fund": true, "gold": true, "crypto": true, "other": true}
 
-const assetCols = `id, name, kind, currency, balance, invested, note, target, target_date, return_pct, maturity, updated_at`
+const assetCols = `id, name, kind, currency, balance, invested, note, target, target_date, return_pct, maturity, payout, updated_at`
 
 func scanAsset(s scanner) (Asset, error) {
 	var x Asset
-	err := s.Scan(&x.ID, &x.Name, &x.Kind, &x.Currency, &x.Balance, &x.Invested, &x.Note, &x.Target, &x.TargetDate, &x.ReturnPct, &x.Maturity, &x.UpdatedAt)
+	err := s.Scan(&x.ID, &x.Name, &x.Kind, &x.Currency, &x.Balance, &x.Invested, &x.Note, &x.Target, &x.TargetDate, &x.ReturnPct, &x.Maturity, &x.Payout, &x.UpdatedAt)
 	return x, err
 }
 
@@ -87,6 +88,8 @@ func validAsset(w http.ResponseWriter, x *Asset) bool {
 		writeErr(w, http.StatusBadRequest, "target_date must be YYYY-MM-DD")
 	case x.ReturnPct != nil && (*x.ReturnPct <= -100 || *x.ReturnPct > 100):
 		writeErr(w, http.StatusBadRequest, "return_pct must be between -100 and 100 (% per year)")
+	case x.Payout != 0 && x.Payout != 1 && x.Payout != 3 && x.Payout != 6 && x.Payout != 12:
+		writeErr(w, http.StatusBadRequest, "payout must be 0 (no coupon), 1, 3, 6 or 12 months")
 	case x.Maturity != nil && !validDate(*x.Maturity):
 		writeErr(w, http.StatusBadRequest, "maturity must be YYYY-MM-DD")
 	default:
@@ -211,8 +214,8 @@ func (a *app) createAsset(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &x) || !validAsset(w, &x) {
 		return
 	}
-	res, err := a.db.Exec(`INSERT INTO assets (name, kind, currency, balance, invested, note, target, target_date, return_pct, maturity) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		x.Name, x.Kind, x.Currency, x.Balance, x.Invested, x.Note, x.Target, x.TargetDate, x.ReturnPct, x.Maturity)
+	res, err := a.db.Exec(`INSERT INTO assets (name, kind, currency, balance, invested, note, target, target_date, return_pct, maturity, payout) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		x.Name, x.Kind, x.Currency, x.Balance, x.Invested, x.Note, x.Target, x.TargetDate, x.ReturnPct, x.Maturity, x.Payout)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
 			writeErr(w, http.StatusConflict, "asset name already exists")
@@ -244,8 +247,8 @@ func (a *app) patchAsset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_, err = a.db.Exec(`UPDATE assets SET name = ?, kind = ?, currency = ?, balance = ?, invested = ?, note = ?, target = ?, target_date = ?,
-		return_pct = ?, maturity = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?`,
-		x.Name, x.Kind, x.Currency, x.Balance, x.Invested, x.Note, x.Target, x.TargetDate, x.ReturnPct, x.Maturity, id)
+		return_pct = ?, maturity = ?, payout = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?`,
+		x.Name, x.Kind, x.Currency, x.Balance, x.Invested, x.Note, x.Target, x.TargetDate, x.ReturnPct, x.Maturity, x.Payout, id)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
 			writeErr(w, http.StatusConflict, "asset name already exists")
