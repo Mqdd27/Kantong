@@ -11,6 +11,8 @@ Screenshot ──Telegram──▶ Hermes (LLM baca gambar)
 
 Yang perlu disiapkan: Hermes yang sudah tersambung ke Telegram, dengan model yang bisa membaca gambar, dan env `FINANCE_API_URL` + `FINANCE_API_TOKEN` di `~/.hermes/.env`. Kalau kamu sudah mengikuti [hermes-email.md](hermes-email.md), env ini sudah ada.
 
+<p align="center"><img src="screenshots/telegram-asset.jpg" width="300" alt="Contoh: kirim screenshot FR0090, Hermes mengusulkan aset baru" /></p>
+
 ## 1. Pasang skill
 
 Dari folder repo Kantong di server:
