@@ -8,6 +8,10 @@
     sbn: 'SBN', mutual_fund: 'Reksa dana', gold: 'Emas', crypto: 'Kripto', other: 'Lainnya',
   }
 
+  const BONDS = new Set(['bond', 'sbn']) // coupon + maturity instead of a savings goal
+  const NO_RETURN = new Set(['ewallet', 'cash'])
+  const TAX = 0.1 // final tax on bond/SBN coupons for individuals
+
   onMount(loadAssets)
 
   const groups = $derived.by(() => {
@@ -30,8 +34,8 @@
   })
   function openEdit(a) {
     f = a
-      ? { ...a, invested: a.invested ?? '', target: a.target ?? '', target_date: a.target_date ?? '' }
-      : { name: '', kind: 'bank', currency: 'IDR', balance: '', invested: '', note: '', target: '', target_date: '' }
+      ? { ...a, invested: a.invested ?? '', target: a.target ?? '', target_date: a.target_date ?? '', return_pct: a.return_pct ?? '', maturity: a.maturity ?? '' }
+      : { name: '', kind: 'bank', currency: 'IDR', balance: '', invested: '', note: '', target: '', target_date: '', return_pct: '', maturity: '' }
     edit = a ?? {}
   }
   const fmtMon = new Intl.DateTimeFormat('id-ID', { month: 'short', year: 'numeric', timeZone: 'UTC' })
@@ -44,11 +48,33 @@
     return { pct, perMonth: (a.target - a.balance) / months, by: fmtMon.format(t) }
   }
 
+  const monthsTo = (d) => {
+    const t = new Date(d + 'T00:00:00Z'), now = new Date()
+    return Math.max(0, (t.getUTCFullYear() - now.getUTCFullYear()) * 12 + t.getUTCMonth() - now.getUTCMonth())
+  }
+  const pctFmt = new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 })
+  // expected return: net monthly coupon (bonds) or projected value (everything else)
+  function proj(a) {
+    const r = a.return_pct / 100
+    if (BONDS.has(a.kind)) {
+      const month = ((a.invested ?? a.balance) * r * (1 - TAX)) / 12
+      const left = a.maturity ? monthsTo(a.maturity) : 0
+      return `Kupon ${pctFmt.format(a.return_pct)}%/thn ≈ ${fmtCur(month, a.currency)}/bln bersih` +
+        (a.maturity ? ` · jatuh tempo ${fmtMon.format(new Date(a.maturity + 'T00:00:00Z'))}, sisa kupon ≈ ${fmtCur(month * left, a.currency)}` : '')
+    }
+    let txt = `Proyeksi ${pctFmt.format(a.return_pct)}%/thn: 1 thn ≈ ${fmtCur(a.balance * (1 + r), a.currency)}`
+    if (a.target_date) txt += ` · ${fmtMon.format(new Date(a.target_date + 'T00:00:00Z'))} ≈ ${fmtCur(a.balance * (1 + r) ** (monthsTo(a.target_date) / 12), a.currency)}`
+    return txt
+  }
+
   async function save(e) {
     e.preventDefault()
     const body = { name: f.name, kind: f.kind, currency: f.currency, balance: Number(f.balance) || 0, note: f.note,
       invested: f.invested === '' || f.invested == null ? null : Number(f.invested),
-      target: Number(f.target) > 0 ? Number(f.target) : null, target_date: f.target ? f.target_date || null : null }
+      target: !BONDS.has(f.kind) && Number(f.target) > 0 ? Number(f.target) : null,
+      target_date: !BONDS.has(f.kind) && f.target ? f.target_date || null : null,
+      return_pct: NO_RETURN.has(f.kind) || f.return_pct === '' || f.return_pct == null ? null : Number(f.return_pct),
+      maturity: BONDS.has(f.kind) ? f.maturity || null : null }
     if (await saveAsset(edit.id, body)) dialog.close()
   }
   async function del() {
@@ -104,6 +130,7 @@
           {#if a.currency !== 'IDR'}{fmtCur(a.balance, a.currency)} · 1 {a.currency} = {fmtIDR.format(a.rate)}{/if}
           {#if a.invested}{a.currency !== 'IDR' ? ' · ' : ''}modal {fmtCur(a.invested, a.currency)}{/if}
         </span>
+        {#if a.return_pct != null}<span class="meta proj">{proj(a)}</span>{/if}
         {#if a.target}
           {@const g = goal(a)}
           <span class="goal">
@@ -151,14 +178,31 @@
       <label>Modal / total disetor ({f.currency}), opsional
         <input type="number" inputmode="decimal" step="any" bind:value={f.invested} />
       </label>
-      <div class="two">
-        <label>Target tabungan ({f.currency}), opsional
-          <input type="number" inputmode="decimal" step="any" min="0" bind:value={f.target} />
-        </label>
-        <label>Tercapai pada
-          <input type="date" bind:value={f.target_date} />
-        </label>
-      </div>
+      {#if BONDS.has(f.kind)}
+        <div class="two">
+          <label>Kupon (% per tahun)
+            <input type="number" inputmode="decimal" step="any" bind:value={f.return_pct} placeholder="mis. 6,25" />
+          </label>
+          <label>Jatuh tempo
+            <input type="date" bind:value={f.maturity} />
+          </label>
+        </div>
+        <small class="hint">Kupon dihitung dari modal (nominal), dipotong pajak 10%.</small>
+      {:else}
+        {#if !NO_RETURN.has(f.kind)}
+          <label>Proyeksi return (% per tahun), opsional
+            <input type="number" inputmode="decimal" step="any" bind:value={f.return_pct} placeholder="mis. 4,5 untuk RDPU" />
+          </label>
+        {/if}
+        <div class="two">
+          <label>Target tabungan ({f.currency}), opsional
+            <input type="number" inputmode="decimal" step="any" min="0" bind:value={f.target} />
+          </label>
+          <label>Tercapai pada
+            <input type="date" bind:value={f.target_date} />
+          </label>
+        </div>
+      {/if}
       <label>Catatan <input bind:value={f.note} /></label>
       <div class="actions">
         {#if edit.id}<button type="button" class="danger" onclick={del}>Hapus</button>{/if}
@@ -240,6 +284,14 @@
     text-align: right;
     color: var(--muted);
     font-variant-numeric: tabular-nums;
+  }
+  .proj {
+    color: var(--accent);
+  }
+  .hint {
+    margin-top: -6px;
+    font-size: 12px;
+    color: var(--muted);
   }
   .goal {
     display: grid;
