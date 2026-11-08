@@ -202,6 +202,12 @@ func nextDate(date, freq string, day int) string {
 	t, _ := time.Parse(time.DateOnly, date)
 	y, m := t.Year(), t.Month()
 	switch freq {
+	case "weekdays":
+		t = t.AddDate(0, 0, 1)
+		for t.Weekday() == time.Saturday || t.Weekday() == time.Sunday {
+			t = t.AddDate(0, 0, 1)
+		}
+		return t.Format(time.DateOnly)
 	case "weekly":
 		return t.AddDate(0, 0, 7).Format(time.DateOnly)
 	case "yearly":
@@ -278,13 +284,17 @@ func (a *app) listRecurring(w http.ResponseWriter, r *http.Request) {
 
 // checkRec validates x by building its first occurrence as a transaction.
 func (a *app) checkRec(w http.ResponseWriter, r *http.Request, x *Recurring) bool {
-	if x.Freq != "weekly" && x.Freq != "monthly" && x.Freq != "yearly" {
-		writeErr(w, http.StatusBadRequest, "freq must be weekly, monthly or yearly")
+	if !slices.Contains([]string{"weekdays", "weekly", "monthly", "yearly"}, x.Freq) {
+		writeErr(w, http.StatusBadRequest, "freq must be weekdays, weekly, monthly or yearly")
 		return false
 	}
-	if _, err := time.Parse(time.DateOnly, x.NextDate); err != nil {
+	d, err := time.Parse(time.DateOnly, x.NextDate)
+	if err != nil {
 		writeErr(w, http.StatusBadRequest, "next_date must be YYYY-MM-DD")
 		return false
+	}
+	if x.Freq == "weekdays" && (d.Weekday() == time.Saturday || d.Weekday() == time.Sunday) {
+		x.NextDate = nextDate(x.NextDate, "weekdays", 0) // a weekend start moves to Monday
 	}
 	t := x.tx(x.NextDate)
 	if !a.validateTx(w, r, &t) {

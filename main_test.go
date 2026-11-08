@@ -196,6 +196,8 @@ func TestNextDate(t *testing.T) {
 		{"2026-01-31", "monthly", 31, "2026-02-28"},
 		{"2026-02-28", "monthly", 31, "2026-03-31"},
 		{"2026-11-08", "weekly", 8, "2026-11-15"},
+		{"2026-11-06", "weekdays", 6, "2026-11-09"}, // Fri -> Mon
+		{"2026-11-09", "weekdays", 9, "2026-11-10"},
 		{"2028-02-29", "yearly", 29, "2029-02-28"},
 	} {
 		if got := nextDate(c.in, c.freq, c.day); got != c.want {

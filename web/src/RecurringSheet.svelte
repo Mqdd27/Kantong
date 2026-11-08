@@ -66,6 +66,7 @@
       </label>
       <label>Ulangi
         <select bind:value={freq}>
+          <option value="weekdays">Tiap hari kerja (Sen–Jum)</option>
           <option value="weekly">Tiap minggu</option>
           <option value="monthly">Tiap bulan</option>
           <option value="yearly">Tiap tahun</option>
@@ -73,6 +74,9 @@
       </label>
     </div>
     <label>Tanggal berikutnya <input type="date" bind:value={next} required /></label>
+    {#if freq === 'weekdays'}
+      <p class="hint">Hari libur atau WFH: tekan <b>Lewati</b> di Budget (kalau catat manual), atau hapus transaksinya (kalau otomatis).</p>
+    {/if}
     <label class="check">
       <input type="checkbox" bind:checked={auto} />
       <span>Catat otomatis di tanggalnya<br /><small>Matikan kalau transaksinya sudah tercatat dari email bank, biar nggak dobel.</small></span>
@@ -120,6 +124,11 @@
     display: grid;
     gap: 4px;
     font-size: 13px;
+    color: var(--muted);
+  }
+  .hint {
+    margin: -4px 0 0;
+    font-size: 12px;
     color: var(--muted);
   }
   .two {

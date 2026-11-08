@@ -4,7 +4,7 @@
   import BudgetCard from './BudgetCard.svelte'
   import RecurringSheet from './RecurringSheet.svelte'
 
-  const FREQ = { weekly: 'mingguan', monthly: 'bulanan', yearly: 'tahunan' }
+  const FREQ = { weekdays: 'hari kerja', weekly: 'mingguan', monthly: 'bulanan', yearly: 'tahunan' }
   const fmtDate = new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'short', timeZone: 'UTC' })
   const dshort = (d) => fmtDate.format(new Date(d + 'T00:00:00Z'))
   const today = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10)
@@ -40,6 +40,17 @@
   const catTotal = $derived(Object.entries(draft).reduce((n, [k, v]) => (k ? n + num(v) : n), 0))
 
   let sheet = $state(null) // null closed, {} new, {rec} edit
+
+  // one row per recurring item: its first occurrence, plus how many more and their total
+  const upcoming = $derived.by(() => {
+    const by = new Map()
+    for (const u of s.budget?.upcoming ?? []) {
+      const g = by.get(u.recurring_id)
+      if (g) (g.more++, (g.total += u.amount))
+      else by.set(u.recurring_id, { ...u, more: 0, total: u.amount })
+    }
+    return [...by.values()]
+  })
 </script>
 
 <MonthBar />
@@ -105,12 +116,12 @@
     <div class="head">
       <h3>Akan datang bulan ini</h3>
     </div>
-    {#each s.budget?.upcoming ?? [] as u (u.recurring_id + u.date)}
+    {#each upcoming as u (u.recurring_id)}
       {@const due = u.date <= today}
       <div class="up">
         <span class="main">
           <span>{u.merchant || u.category}</span>
-          <span class="muted">{dshort(u.date)}{due ? ' · jatuh tempo' : ''}{u.auto ? ' · otomatis' : ''}</span>
+          <span class="muted">{dshort(u.date)}{due ? ' · jatuh tempo' : ''}{u.more ? ` · +${u.more}× lagi, total ${fmtIDR.format(u.total)}` : ''}{u.auto ? ' · otomatis' : ''}</span>
         </span>
         <span class="amt" class:in={u.type === 'in'}>{u.type === 'in' ? '+' : ''}{fmtIDR.format(u.amount)}</span>
         {#if due && !u.auto && s.recurring.find((r) => r.id === u.recurring_id)?.next_date === u.date}
