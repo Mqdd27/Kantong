@@ -39,7 +39,7 @@
 <div class="tools">
   <input type="search" bind:value={q} placeholder="Cari merchant, catatan, kategori…" aria-label="Cari transaksi" />
   <a class="export" href="#/rules">Aturan</a>
-  <a class="export" href="/api/export.csv" download>Export CSV</a>
+  <a class="export" href="/api/export.xlsx" download>Export Excel</a>
 </div>
 
 {#if found}

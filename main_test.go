@@ -1,9 +1,12 @@
 package main
 
 import (
+	"archive/zip"
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -358,4 +361,32 @@ func TestGoldGrams(t *testing.T) {
 	if p.Assets[0].Rate != 2e6 || p.TotalIDR != 3e6 || p.InvestedIDR != 2.5e6 { // 1.5 g × Rp2.000.000
 		t.Fatalf("%+v", p)
 	}
+}
+
+func TestExportXLSX(t *testing.T) {
+	srv := newTestServer(t)
+	call(t, srv, "POST", "/api/transactions", `{"occurred_at":"2026-11-07T12:30:00+07:00","amount":25000,"type":"out","category":"Jajan","merchant":"=Indo<maret>&","source":"manual"}`, nil)
+	req, _ := http.NewRequest("GET", srv.URL+"/api/export.xlsx", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	z, err := zip.NewReader(bytes.NewReader(body), int64(len(body)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range z.File {
+		if f.Name == "xl/worksheets/sheet1.xml" {
+			rc, _ := f.Open()
+			sheet, _ := io.ReadAll(rc)
+			if !bytes.Contains(sheet, []byte("=Indo&lt;maret&gt;&amp;")) || !bytes.Contains(sheet, []byte("<v>25000</v>")) || !bytes.Contains(sheet, []byte("2026-11-07 12:30")) {
+				t.Fatalf("sheet: %s", sheet)
+			}
+			return
+		}
+	}
+	t.Fatal("no sheet1")
 }

@@ -16,7 +16,7 @@ Satu binary Go (API + SQLite + SSE + PWA Svelte yang di-embed), image Docker ±2
 
 ## Fitur
 
-- **Transaksi**: masuk / keluar / transfer dengan kategori. Bisa dicari di semua bulan dan di-export ke CSV.
+- **Transaksi**: masuk / keluar / transfer dengan kategori. Bisa dicari di semua bulan dan di-export ke Excel (.xlsx).
 - **Multi-currency**: transaksi dalam USD/SGD/JPY/... disimpan nominal aslinya, lalu dikonversi ke IDR pakai kurs hari itu ([frankfurter.dev](https://frankfurter.dev), data ECB).
 - **Budget bulanan**: total dan per kategori, berlaku terus ke bulan berikutnya sampai diubah. Ada sisa bisa dibelanjakan (dikurangi tagihan yang akan datang), jatah per hari, dan penanda posisi bulan.
 - **Transaksi berulang**: gaji, langganan, cicilan, parkir kantor. Mingguan dengan pilihan hari (mis. Sen–Jum), bulanan dengan pilihan bulan, atau tahunan. Bisa dicatat otomatis atau manual (Catat / Lewati).
@@ -106,7 +106,7 @@ Semua endpoint `/api/*` butuh `Authorization: Bearer $API_TOKEN` atau cookie ses
 | `GET/POST/PATCH/DELETE /api/assets`, `GET /api/assets/history` | Aset, total kekayaan, riwayat harian |
 | `POST /api/orders`, `PATCH /api/orders/{order_ref}` | Order investasi pending → success/failed |
 | `GET /api/fx?currency=USD` | Kurs ke IDR |
-| `GET /api/export.csv` | Semua transaksi |
+| `GET /api/export.xlsx` | Semua transaksi (Excel) |
 | `GET /api/events` | Stream SSE |
 
 ```sh

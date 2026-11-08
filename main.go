@@ -169,7 +169,7 @@ func (a *app) routes() http.Handler {
 	api.HandleFunc("PATCH /api/recurring/{id}", a.patchRecurring)
 	api.HandleFunc("DELETE /api/recurring/{id}", a.deleteRecurring)
 	api.HandleFunc("POST /api/recurring/{id}/advance", a.advanceRecurring)
-	api.HandleFunc("GET /api/export.csv", a.exportCSV)
+	api.HandleFunc("GET /api/export.xlsx", a.exportXLSX)
 	api.HandleFunc("GET /api/assets", a.listAssets)
 	api.HandleFunc("GET /api/assets/history", a.assetHistory)
 	api.HandleFunc("POST /api/assets", a.createAsset)

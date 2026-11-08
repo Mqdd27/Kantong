@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"database/sql"
-	"encoding/csv"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -453,37 +452,33 @@ func (a *app) postDue(ctx context.Context) {
 
 // ---------- export ----------
 
-func (a *app) exportCSV(w http.ResponseWriter, r *http.Request) {
+func (a *app) exportXLSX(w http.ResponseWriter, r *http.Request) {
 	rows, err := a.db.Query(`SELECT ` + txCols + ` FROM transactions ORDER BY occurred_at, id`)
 	if err != nil {
 		a.fail(w, err)
 		return
 	}
 	defer rows.Close()
-	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-	w.Header().Set("Content-Disposition", `attachment; filename="kantong-`+today()+`.csv"`)
-	c := csv.NewWriter(w)
-	c.Write([]string{"date", "type", "category", "merchant", "account", "amount_idr", "currency", "orig_amount", "note", "source"})
+	var out [][]any
 	for rows.Next() {
 		t, err := scanTx(rows)
 		if err != nil {
-			slog.Error("export", "err", err)
-			break
+			a.fail(w, err)
+			return
 		}
-		orig := ""
+		var orig any
 		if t.OrigAmount != nil {
-			orig = strconv.FormatFloat(*t.OrigAmount, 'f', -1, 64)
+			orig = *t.OrigAmount
 		}
-		c.Write([]string{t.OccurredAt, t.Type, t.Category, csvSafe(t.Merchant), csvSafe(t.Account), strconv.FormatInt(t.Amount, 10),
-			t.Currency, orig, csvSafe(t.Note), t.Source})
+		when := t.OccurredAt
+		if tm, err := time.Parse(time.RFC3339, t.OccurredAt); err == nil {
+			when = tm.In(wib).Format("2006-01-02 15:04")
+		}
+		out = append(out, []any{when, t.Type, t.Category, t.Merchant, t.Account, t.Amount, t.Currency, orig, t.Note, t.Source})
 	}
-	c.Flush()
-}
-
-// csvSafe stops spreadsheet apps from running email-derived text as a formula.
-func csvSafe(s string) string {
-	if s != "" && strings.ContainsRune("=+-@\t\r", rune(s[0])) {
-		return "'" + s
+	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	w.Header().Set("Content-Disposition", `attachment; filename="kantong-`+today()+`.xlsx"`)
+	if err := writeXLSX(w, []string{"Tanggal", "Tipe", "Kategori", "Merchant", "Akun", "Jumlah (IDR)", "Mata uang", "Jumlah asli", "Catatan", "Sumber"}, out); err != nil {
+		slog.Error("export", "err", err)
 	}
-	return s
 }
