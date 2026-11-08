@@ -25,6 +25,7 @@ Satu binary Go (API + SQLite + SSE + PWA Svelte yang di-embed), image Docker ±2
 - **Kalender**: pengeluaran per tanggal dengan warna sesuai besarnya, tagihan berulang yang akan datang, jumlah hari tanpa belanja, dan daftar transaksi per hari.
 - **Analitik**: 6 bulan masuk vs keluar, tingkat tabungan, dan kategori bulan ini dibanding rata-ratanya.
 - **Review & aturan**: transaksi hasil parsing email yang kurang yakin ditandai untuk dicek sekali tap. Koreksi kategori bisa disimpan jadi aturan ("selalu kategorikan Gojek sebagai Transport"), dan email berikutnya dari merchant itu langsung masuk dengan kategori yang benar.
+- **Foto struk → transaksi**: kirim foto struk ke Hermes di Telegram, transaksi keluarnya langsung tercatat.
 - **Notifikasi Telegram**: setiap transaksi baru dari email dikirim ke Telegram, misalnya `Keluar Rp25.000 · Jajan · Indomaret (perlu review)`.
 - **Backup harian**: salinan database tiap jam 03:00 WIB, 14 hari terakhir disimpan.
 - **Realtime**: transaksi baru dari agent langsung muncul di semua perangkat (SSE).
@@ -56,7 +57,7 @@ Email bank/broker ──▶ mailbox (IMAP, read-only)
 
 Skill agent-nya ([Hermes](https://github.com/NousResearch/hermes-agent)) ada di [`hermes/`](hermes). Cara menyambungkan email bank ke Hermes, dari bikin app password sampai cron, ada di **[docs/hermes-email.md](docs/hermes-email.md)**.
 
-Skill kedua, [`hermes/finance-assets`](hermes/finance-assets), mengisi aset dari screenshot portofolio yang kamu kirim ke Hermes di Telegram. Panduannya ada di **[docs/hermes-assets.md](docs/hermes-assets.md)**.
+Skill kedua, [`hermes/finance-assets`](hermes/finance-assets), mengisi aset dari screenshot portofolio yang kamu kirim ke Hermes di Telegram. Panduannya ada di **[docs/hermes-assets.md](docs/hermes-assets.md)**. Skill ketiga, [`hermes/finance-receipt`](hermes/finance-receipt), mencatat transaksi dari foto struk belanja: **[docs/hermes-receipt.md](docs/hermes-receipt.md)**.
 
 ## Jalanin
 
