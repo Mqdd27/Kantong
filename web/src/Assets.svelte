@@ -65,7 +65,8 @@
     }
     if (BONDS.has(a.kind) && a.payout) {
       const per = ((a.invested ?? a.balance) * r * a.payout * (1 - TAX)) / 12
-      const n = a.maturity ? Math.floor(monthsTo(a.maturity) / a.payout) : 0
+      let n = 0 // coupon dates left: step back from maturity by the payout period
+      for (const d = new Date(a.maturity + 'T00:00:00Z'); a.maturity && d > new Date(); d.setUTCMonth(d.getUTCMonth() - a.payout)) n++
       return `${pct} · kupon ≈ ${fmtCur(per, a.currency)} tiap ${PAYOUT[a.payout]} (bersih pajak)` +
         (n ? ` · ${n}× lagi s.d. ${end}, total ≈ ${fmtCur(per * n, a.currency)}` : '')
     }
