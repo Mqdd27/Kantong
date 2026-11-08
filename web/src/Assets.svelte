@@ -10,7 +10,7 @@
 
   const BONDS = new Set(['bond', 'sbn']) // payout + maturity instead of a savings goal
   const PAYOUT = { 1: 'bulan', 3: '3 bulan', 6: '6 bulan', 12: 'tahun' } // months between coupons; 0 = none
-  const NO_RETURN = new Set(['ewallet', 'cash'])
+  const RETURNS = new Set(['bond', 'sbn', 'mutual_fund']) // only these get a return projection
   const TAX = 0.1 // final tax on bond/SBN coupons for individuals
 
   onMount(loadAssets)
@@ -79,7 +79,7 @@
       invested: f.invested === '' || f.invested == null ? null : Number(f.invested),
       target: !BONDS.has(f.kind) && Number(f.target) > 0 ? Number(f.target) : null,
       target_date: !BONDS.has(f.kind) && f.target ? f.target_date || null : null,
-      return_pct: NO_RETURN.has(f.kind) || f.return_pct === '' || f.return_pct == null ? null : Number(f.return_pct),
+      return_pct: !RETURNS.has(f.kind) || f.return_pct === '' || f.return_pct == null ? null : Number(f.return_pct),
       maturity: BONDS.has(f.kind) ? f.maturity || null : null,
       payout: BONDS.has(f.kind) ? Number(f.payout) || 0 : 0 }
     if (await saveAsset(edit.id, body)) dialog.close()
@@ -137,7 +137,7 @@
           {#if a.currency !== 'IDR'}{fmtCur(a.balance, a.currency)} · 1 {a.currency} = {fmtIDR.format(a.rate)}{/if}
           {#if a.invested}{a.currency !== 'IDR' ? ' · ' : ''}modal {fmtCur(a.invested, a.currency)}{/if}
         </span>
-        {#if a.return_pct != null}<span class="meta proj">{proj(a)}</span>{/if}
+        {#if a.return_pct != null && RETURNS.has(a.kind)}<span class="meta proj">{proj(a)}</span>{/if}
         {#if a.target}
           {@const g = goal(a)}
           <span class="goal">
@@ -203,7 +203,7 @@
         <label>Jatuh tempo <input type="date" bind:value={f.maturity} /></label>
         <small class="hint">Contoh: SBN ritel (ORI/SR/ST) tiap bulan, FR/PBS tiap 6 bulan. Dihitung dari modal, dipotong pajak 10%.</small>
       {:else}
-        {#if !NO_RETURN.has(f.kind)}
+        {#if RETURNS.has(f.kind)}
           <label>Proyeksi return (% per tahun), opsional
             <input type="number" inputmode="decimal" step="any" bind:value={f.return_pct} placeholder="mis. 4,5 untuk RDPU" />
           </label>
