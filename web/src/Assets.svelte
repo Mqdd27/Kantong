@@ -1,7 +1,7 @@
 <script>
   import { onMount } from 'svelte'
   import PerfChart from './PerfChart.svelte'
-  import { s, fmtIDR, fmtCur, fmtShort, loadAssets, CURRENCIES, saveAsset, deleteAsset } from './lib/store.svelte.js'
+  import { s, fmtIDR, fmtCur, fmtShort, loadAssets, CURRENCIES, saveAsset, deleteAsset, view, toggleHide } from './lib/store.svelte.js'
 
   const KINDS = {
     bank: 'Bank', ewallet: 'E-wallet', forex: 'Valas', cash: 'Tunai', stock: 'Saham', bond: 'Obligasi',
@@ -105,7 +105,11 @@
 
 <div class="top">
 <section class="hero">
-  <span>Total aset</span>
+  <span class="head">Total aset
+    <button class="eye" aria-label={view.hide ? 'Tampilkan nominal' : 'Sembunyikan nominal'} aria-pressed={view.hide} onclick={toggleHide}>
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" /><circle cx="12" cy="12" r="3" />{#if view.hide}<path d="M3 3l18 18" />{/if}</svg>
+    </button>
+  </span>
   <b>{fmtIDR.format(s.portfolio.total_idr)}</b>
   {#if s.portfolio.total_idr > 0}
     <ul class="alloc" aria-label="Alokasi per jenis">
@@ -291,6 +295,18 @@
   .hero > span {
     color: var(--muted);
     font-size: 13px;
+  }
+  .head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .eye {
+    background: none;
+    border: 0;
+    padding: 0;
+    color: var(--muted);
+    display: grid;
   }
   .hero b {
     font-size: 28px;

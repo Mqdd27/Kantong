@@ -1,6 +1,6 @@
 <script>
   import { untrack } from 'svelte'
-  import { s, load, connect, view, toggleHide } from './lib/store.svelte.js'
+  import { s, load, connect } from './lib/store.svelte.js'
   import Login from './Login.svelte'
   import Home from './Home.svelte'
   import TxList from './TxList.svelte'
@@ -78,9 +78,6 @@
         {#if href === '/review' && reviewCount}<span class="count">{reviewCount}</span>{/if}
       </a>
     {/each}
-    <button class="eye" aria-label={view.hide ? 'Tampilkan nominal' : 'Sembunyikan nominal'} aria-pressed={view.hide} onclick={toggleHide}>
-      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" /><circle cx="12" cy="12" r="3" />{#if view.hide}<path d="M3 3l18 18" />{/if}</svg>
-    </button>
   </nav>
 
   {#if sheet}
@@ -115,14 +112,6 @@
   nav a.active {
     color: var(--text);
     font-weight: 600;
-  }
-  .eye {
-    background: none;
-    border: 0;
-    color: var(--muted);
-    padding: 0 14px;
-    display: grid;
-    place-items: center;
   }
   .brand,
   .new,
@@ -168,11 +157,6 @@
     .new {
       display: block;
       margin-bottom: 16px;
-    }
-    .eye {
-      margin-top: auto;
-      justify-content: start;
-      padding: 10px 12px;
     }
     .fab {
       display: none;
