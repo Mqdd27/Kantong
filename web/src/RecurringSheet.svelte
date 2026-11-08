@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte'
-  import { s, fmtNum, CURRENCIES, act } from './lib/store.svelte.js'
+  import { s, fmtNum, CURRENCIES, DAYS, MONTHS, act } from './lib/store.svelte.js'
 
   /** rec = undefined → add, otherwise edit */
   let { rec, onclose } = $props()
@@ -15,6 +15,9 @@
   let freq = $state(rec?.freq ?? 'monthly')
   let next = $state(rec?.next_date ?? new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10))
   let auto = $state(rec?.auto ?? false)
+  let mask = $state(rec?.mask ?? 0)
+  const toggle = (i) => (mask ^= 1 << i)
+  const WEEK = [1, 2, 3, 4, 5, 6, 0] // Senin dulu
   let note = $state(rec?.note ?? '')
 
   const foreign = $derived(currency !== 'IDR')
@@ -27,7 +30,7 @@
 
   async function save(e) {
     e.preventDefault()
-    const body = { type, category, merchant, currency, freq, next_date: next, auto, note, amount: foreign ? 0 : amount }
+    const body = { type, category, merchant, currency, freq, next_date: next, auto, note, amount: foreign ? 0 : amount, mask: freq === 'yearly' ? 0 : mask }
     if (foreign) body.orig_amount = Number(orig)
     if (await act(rec ? `/recurring/${rec.id}` : '/recurring', rec ? 'PATCH' : 'POST', body)) dialog.close()
   }
@@ -65,8 +68,7 @@
         <select bind:value={category}>{#each cats as c}<option value={c.name}>{c.name}</option>{/each}</select>
       </label>
       <label>Ulangi
-        <select bind:value={freq}>
-          <option value="weekdays">Tiap hari kerja (Sen–Jum)</option>
+        <select bind:value={freq} onchange={() => (mask = 0)}>
           <option value="weekly">Tiap minggu</option>
           <option value="monthly">Tiap bulan</option>
           <option value="yearly">Tiap tahun</option>
@@ -74,8 +76,23 @@
       </label>
     </div>
     <label>Tanggal berikutnya <input type="date" bind:value={next} required /></label>
-    {#if freq === 'weekdays'}
-      <p class="hint">Hari libur atau WFH: tekan <b>Lewati</b> di Budget (kalau catat manual), atau hapus transaksinya (kalau otomatis).</p>
+    {#if freq === 'weekly'}
+      <div class="pick">
+        <span>Hari</span>
+        <div class="chips">
+          {#each WEEK as i}<button type="button" class:on={mask & (1 << i)} onclick={() => toggle(i)}>{DAYS[i]}</button>{/each}
+          <button type="button" class="preset" onclick={() => (mask = 62)}>Hari kerja</button>
+        </div>
+        <small>{mask ? 'Libur atau WFH: tekan Lewati di Budget (catat manual) atau hapus transaksinya (otomatis).' : 'Kosong = tiap 7 hari dari tanggal berikutnya.'}</small>
+      </div>
+    {:else if freq === 'monthly'}
+      <div class="pick">
+        <span>Bulan</span>
+        <div class="chips">
+          {#each MONTHS as m, i}<button type="button" class:on={mask & (1 << i)} onclick={() => toggle(i)}>{m}</button>{/each}
+        </div>
+        <small>Di tanggal yang sama dengan "Tanggal berikutnya". Kosong = tiap bulan.</small>
+      </div>
     {/if}
     <label class="check">
       <input type="checkbox" bind:checked={auto} />
@@ -126,9 +143,28 @@
     font-size: 13px;
     color: var(--muted);
   }
-  .hint {
-    margin: -4px 0 0;
-    font-size: 12px;
+  .pick {
+    display: grid;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .chips button {
+    padding: 6px 10px;
+    font-size: 13px;
+    border-radius: 999px;
+  }
+  .chips .on {
+    background: var(--accent);
+    color: var(--on-accent);
+    border-color: var(--accent);
+  }
+  .chips .preset {
     color: var(--muted);
   }
   .two {

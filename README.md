@@ -19,7 +19,7 @@ Satu binary Go (API + SQLite + SSE + PWA Svelte yang di-embed), image Docker ±2
 - **Transaksi**: masuk / keluar / transfer dengan kategori. Bisa dicari di semua bulan dan di-export ke CSV.
 - **Multi-currency**: transaksi dalam USD/SGD/JPY/... disimpan nominal aslinya, lalu dikonversi ke IDR pakai kurs hari itu ([frankfurter.dev](https://frankfurter.dev), data ECB).
 - **Budget bulanan**: total dan per kategori, berlaku terus ke bulan berikutnya sampai diubah. Ada sisa bisa dibelanjakan (dikurangi tagihan yang akan datang), jatah per hari, dan penanda posisi bulan.
-- **Transaksi berulang**: gaji, langganan, cicilan. Bisa dicatat otomatis atau manual (Catat / Lewati).
+- **Transaksi berulang**: gaji, langganan, cicilan, parkir kantor. Mingguan dengan pilihan hari (mis. Sen–Jum), bulanan dengan pilihan bulan, atau tahunan. Bisa dicatat otomatis atau manual (Catat / Lewati).
 - **Aset & portofolio**: rekening, valas, saham (total), obligasi, SBN, reksa dana, emas, kripto. Ada total kekayaan dalam IDR, alokasi per jenis, untung/rugi vs modal, dan target tabungan.
 - **Order investasi dari email**: konfirmasi pembelian dicatat *pending*, lalu email berhasil/gagal menyelesaikannya dan meng-update saldo aset.
 - **Analitik**: 6 bulan masuk vs keluar, tingkat tabungan, dan kategori bulan ini dibanding rata-ratanya.

@@ -185,15 +185,16 @@ type Recurring struct {
 	Freq       string   `json:"freq"`
 	NextDate   string   `json:"next_date"`
 	Auto       bool     `json:"auto"`
+	Mask       int      `json:"mask"` // weekly: bit 0 = Sunday … 6 = Saturday; monthly: bit 0 = Jan … 11 = Dec; 0 = every period
 	day        int
 }
 
-const recCols = `id, type, category, merchant, account, note, amount, currency, orig_amount, freq, next_date, auto, day`
+const recCols = `id, type, category, merchant, account, note, amount, currency, orig_amount, freq, next_date, auto, day, mask`
 
 func scanRec(s scanner) (Recurring, error) {
 	var x Recurring
 	err := s.Scan(&x.ID, &x.Type, &x.Category, &x.Merchant, &x.Account, &x.Note, &x.Amount, &x.Currency, &x.OrigAmount,
-		&x.Freq, &x.NextDate, &x.Auto, &x.day)
+		&x.Freq, &x.NextDate, &x.Auto, &x.day, &x.Mask)
 	return x, err
 }
 
@@ -202,12 +203,6 @@ func nextDate(date, freq string, day int) string {
 	t, _ := time.Parse(time.DateOnly, date)
 	y, m := t.Year(), t.Month()
 	switch freq {
-	case "weekdays":
-		t = t.AddDate(0, 0, 1)
-		for t.Weekday() == time.Saturday || t.Weekday() == time.Sunday {
-			t = t.AddDate(0, 0, 1)
-		}
-		return t.Format(time.DateOnly)
 	case "weekly":
 		return t.AddDate(0, 0, 7).Format(time.DateOnly)
 	case "yearly":
@@ -217,6 +212,36 @@ func nextDate(date, freq string, day int) string {
 	}
 	last := time.Date(y, m+1, 0, 0, 0, 0, 0, time.UTC).Day()
 	return time.Date(y, m, min(day, last), 0, 0, 0, 0, time.UTC).Format(time.DateOnly)
+}
+
+// on reports whether date is one of x's selected weekdays/months (always true without a mask).
+func (x Recurring) on(date string) bool {
+	t, _ := time.Parse(time.DateOnly, date)
+	switch {
+	case x.Mask == 0:
+		return true
+	case x.Freq == "weekly":
+		return x.Mask&(1<<t.Weekday()) != 0
+	default: // monthly
+		return x.Mask&(1<<(t.Month()-1)) != 0
+	}
+}
+
+// next is the occurrence after date: one period on, then onward to a selected weekday/month.
+func (x Recurring) next(date string) string {
+	if x.Mask != 0 && x.Freq == "weekly" { // day by day
+		t, _ := time.Parse(time.DateOnly, date)
+		for {
+			if t = t.AddDate(0, 0, 1); x.on(t.Format(time.DateOnly)) {
+				return t.Format(time.DateOnly)
+			}
+		}
+	}
+	d := nextDate(date, x.Freq, x.day)
+	for !x.on(d) {
+		d = nextDate(d, x.Freq, x.day)
+	}
+	return d
 }
 
 // tx builds the transaction for one occurrence; Amount 0 + foreign currency converts at that date's rate.
@@ -263,7 +288,7 @@ func (a *app) upcoming(ctx context.Context, from, to string) ([]Upcoming, error)
 				amt = int64(math.Round(*x.OrigAmount * rate))
 			}
 		}
-		for d := x.NextDate; d < end; d = nextDate(d, x.Freq, x.day) {
+		for d := x.NextDate; d < end; d = x.next(d) {
 			if d >= start {
 				out = append(out, Upcoming{x.ID, d, x.Merchant, x.Category, x.Type, amt, x.Auto})
 			}
@@ -284,17 +309,14 @@ func (a *app) listRecurring(w http.ResponseWriter, r *http.Request) {
 
 // checkRec validates x by building its first occurrence as a transaction.
 func (a *app) checkRec(w http.ResponseWriter, r *http.Request, x *Recurring) bool {
-	if !slices.Contains([]string{"weekdays", "weekly", "monthly", "yearly"}, x.Freq) {
-		writeErr(w, http.StatusBadRequest, "freq must be weekdays, weekly, monthly or yearly")
+	limit := map[string]int{"weekly": 1<<7 - 1, "monthly": 1<<12 - 1, "yearly": 0}
+	if max, ok := limit[x.Freq]; !ok || x.Mask < 0 || x.Mask > max {
+		writeErr(w, http.StatusBadRequest, "freq must be weekly, monthly or yearly; mask selects weekdays (weekly, 7 bits) or months (monthly, 12 bits)")
 		return false
 	}
-	d, err := time.Parse(time.DateOnly, x.NextDate)
-	if err != nil {
+	if _, err := time.Parse(time.DateOnly, x.NextDate); err != nil {
 		writeErr(w, http.StatusBadRequest, "next_date must be YYYY-MM-DD")
 		return false
-	}
-	if x.Freq == "weekdays" && (d.Weekday() == time.Saturday || d.Weekday() == time.Sunday) {
-		x.NextDate = nextDate(x.NextDate, "weekdays", 0) // a weekend start moves to Monday
 	}
 	t := x.tx(x.NextDate)
 	if !a.validateTx(w, r, &t) {
@@ -305,6 +327,9 @@ func (a *app) checkRec(w http.ResponseWriter, r *http.Request, x *Recurring) boo
 		x.Amount = t.Amount
 	}
 	x.day, _ = strconv.Atoi(x.NextDate[8:])
+	if !x.on(x.NextDate) { // e.g. a Saturday start for a Mon–Fri item moves to Monday
+		x.NextDate = x.next(x.NextDate)
+	}
 	return true
 }
 
@@ -313,9 +338,9 @@ func (a *app) createRecurring(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &x) || !a.checkRec(w, r, &x) {
 		return
 	}
-	res, err := a.db.Exec(`INSERT INTO recurring (type, category, merchant, account, note, amount, currency, orig_amount, freq, day, next_date, auto)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, x.Type, x.Category, x.Merchant, x.Account, x.Note, x.Amount, x.Currency,
-		x.OrigAmount, x.Freq, x.day, x.NextDate, x.Auto)
+	res, err := a.db.Exec(`INSERT INTO recurring (type, category, merchant, account, note, amount, currency, orig_amount, freq, day, next_date, auto, mask)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, x.Type, x.Category, x.Merchant, x.Account, x.Note, x.Amount, x.Currency,
+		x.OrigAmount, x.Freq, x.day, x.NextDate, x.Auto, x.Mask)
 	if err != nil {
 		a.fail(w, err)
 		return
@@ -348,8 +373,8 @@ func (a *app) patchRecurring(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_, err := a.db.Exec(`UPDATE recurring SET type = ?, category = ?, merchant = ?, account = ?, note = ?, amount = ?, currency = ?,
-		orig_amount = ?, freq = ?, day = ?, next_date = ?, auto = ? WHERE id = ?`, x.Type, x.Category, x.Merchant, x.Account, x.Note,
-		x.Amount, x.Currency, x.OrigAmount, x.Freq, x.day, x.NextDate, x.Auto, x.ID)
+		orig_amount = ?, freq = ?, day = ?, next_date = ?, auto = ?, mask = ? WHERE id = ?`, x.Type, x.Category, x.Merchant, x.Account, x.Note,
+		x.Amount, x.Currency, x.OrigAmount, x.Freq, x.day, x.NextDate, x.Auto, x.Mask, x.ID)
 	if err != nil {
 		a.fail(w, err)
 		return
@@ -384,7 +409,7 @@ func (a *app) advanceRecurring(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if _, err := a.db.Exec(`UPDATE recurring SET next_date = ? WHERE id = ?`, nextDate(x.NextDate, x.Freq, x.day), x.ID); err != nil {
+	if _, err := a.db.Exec(`UPDATE recurring SET next_date = ? WHERE id = ?`, x.next(x.NextDate), x.ID); err != nil {
 		a.fail(w, err)
 		return
 	}
@@ -417,7 +442,7 @@ func (a *app) postDue(ctx context.Context) {
 				slog.Error("recurring post", "id", x.ID, "err", err) // retried next hour
 				break
 			}
-			x.NextDate = nextDate(x.NextDate, x.Freq, x.day)
+			x.NextDate = x.next(x.NextDate)
 			if _, err := a.db.ExecContext(ctx, `UPDATE recurring SET next_date = ? WHERE id = ?`, x.NextDate, x.ID); err != nil {
 				slog.Error("recurring advance", "id", x.ID, "err", err)
 				break

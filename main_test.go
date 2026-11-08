@@ -187,6 +187,32 @@ func TestCurrencyAndAssets(t *testing.T) {
 	}
 }
 
+func TestRecurringMask(t *testing.T) {
+	for _, c := range []struct {
+		x        Recurring
+		in, want string
+	}{
+		{Recurring{Freq: "weekly", Mask: 62}, "2026-11-06", "2026-11-09"},                    // Mon–Fri: Fri -> Mon
+		{Recurring{Freq: "weekly", Mask: 62}, "2026-11-09", "2026-11-10"},                    // Mon -> Tue
+		{Recurring{Freq: "weekly", Mask: 1<<2 | 1<<4}, "2026-11-10", "2026-11-12"},           // Tue/Thu
+		{Recurring{Freq: "monthly", Mask: 1<<0 | 1<<6, day: 31}, "2026-01-31", "2026-07-31"}, // Jan/Jul
+		{Recurring{Freq: "monthly", Mask: 1<<0 | 1<<6, day: 31}, "2026-07-31", "2027-01-31"},
+	} {
+		if got := c.x.next(c.in); got != c.want {
+			t.Errorf("%+v next(%s) = %s, want %s", c.x, c.in, got, c.want)
+		}
+	}
+	// a Saturday start for a Mon–Fri item moves to Monday
+	srv := newTestServer(t)
+	var x Recurring
+	if call(t, srv, "POST", "/api/recurring", `{"type":"out","category":"Transport","merchant":"Parkir","amount":5000,"freq":"weekly","mask":62,"next_date":"2026-11-07"}`, &x); x.NextDate != "2026-11-09" {
+		t.Fatalf("next_date = %s", x.NextDate)
+	}
+	if c := call(t, srv, "POST", "/api/recurring", `{"type":"out","category":"Transport","amount":1,"freq":"weekly","mask":128,"next_date":"2026-11-07"}`, nil); c != 400 {
+		t.Fatalf("bad mask accepted: %d", c)
+	}
+}
+
 func TestNextDate(t *testing.T) {
 	for _, c := range []struct {
 		in, freq string
@@ -196,8 +222,6 @@ func TestNextDate(t *testing.T) {
 		{"2026-01-31", "monthly", 31, "2026-02-28"},
 		{"2026-02-28", "monthly", 31, "2026-03-31"},
 		{"2026-11-08", "weekly", 8, "2026-11-15"},
-		{"2026-11-06", "weekdays", 6, "2026-11-09"}, // Fri -> Mon
-		{"2026-11-09", "weekdays", 9, "2026-11-10"},
 		{"2028-02-29", "yearly", 29, "2029-02-28"},
 	} {
 		if got := nextDate(c.in, c.freq, c.day); got != c.want {

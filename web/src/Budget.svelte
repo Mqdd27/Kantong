@@ -1,10 +1,9 @@
 <script>
-  import { s, fmtIDR, fmtNum, fmtCur, setBudget, act } from './lib/store.svelte.js'
+  import { s, fmtIDR, fmtNum, fmtCur, setBudget, act, freqLabel } from './lib/store.svelte.js'
   import MonthBar from './MonthBar.svelte'
   import BudgetCard from './BudgetCard.svelte'
   import RecurringSheet from './RecurringSheet.svelte'
 
-  const FREQ = { weekdays: 'hari kerja', weekly: 'mingguan', monthly: 'bulanan', yearly: 'tahunan' }
   const fmtDate = new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'short', timeZone: 'UTC' })
   const dshort = (d) => fmtDate.format(new Date(d + 'T00:00:00Z'))
   const today = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10)
@@ -143,7 +142,7 @@
       <button class="rec" onclick={() => (sheet = { rec: r })}>
         <span class="main">
           <span>{r.merchant || r.category}</span>
-          <span class="muted">{r.category} · {FREQ[r.freq]} · berikutnya {dshort(r.next_date)}{r.auto ? ' · otomatis' : ''}</span>
+          <span class="muted">{r.category} · {freqLabel(r)} · berikutnya {dshort(r.next_date)}{r.auto ? ' · otomatis' : ''}</span>
         </span>
         <span class="amt" class:in={r.type === 'in'}>
           {r.currency !== 'IDR' ? fmtCur(r.orig_amount, r.currency) : fmtIDR.format(r.amount)}

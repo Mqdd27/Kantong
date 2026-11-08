@@ -220,3 +220,13 @@ export const setBudget = (category, amount) => act('/budget', 'PUT', { month: s.
 
 // ---- rules ----
 export const addRule = (merchant, type, category) => act('/rules', 'POST', { pattern: merchant.trim(), type, category })
+
+// recurring mask: weekly bit 0 = Minggu … 6 = Sabtu; monthly bit 0 = Jan … 11 = Des
+export const DAYS = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab']
+export const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des']
+export function freqLabel(r) {
+  const pick = (names) => names.filter((_, i) => r.mask & (1 << i)).join(', ')
+  if (r.freq === 'weekly') return r.mask === 62 ? 'hari kerja' : r.mask ? 'tiap ' + pick(DAYS) : 'mingguan'
+  if (r.freq === 'monthly') return r.mask ? 'tgl ' + Number(r.next_date.slice(8)) + ' bulan ' + pick(MONTHS) : 'bulanan'
+  return 'tahunan'
+}
