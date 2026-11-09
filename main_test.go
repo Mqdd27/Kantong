@@ -390,3 +390,33 @@ func TestExportXLSX(t *testing.T) {
 	}
 	t.Fatal("no sheet1")
 }
+
+func TestAssetFollowsTransactions(t *testing.T) {
+	srv := newTestServer(t)
+	var x Asset
+	call(t, srv, "POST", "/api/assets", `{"name":"Jago","kind":"bank","balance":1000000}`, &x)
+	time.Sleep(2 * time.Second) // anchor (second precision) < transactions
+	at := time.Now().Add(-time.Second).In(wib).Format(time.RFC3339)
+	for i, b := range []string{
+		`"type":"out","category":"Jajan","account":"jago","amount":50000`,
+		`"type":"in","category":"Gaji","account":"Jago","amount":20000`,
+		`"type":"transfer","category":"Transfer","account":"Jago","amount":99000`, // no destination: ignored
+		`"type":"out","category":"Jajan","account":"BCA","amount":7000`,
+	} {
+		call(t, srv, "POST", "/api/transactions", `{"occurred_at":"`+at+`","source":"manual","source_ref":"r`+strconv.Itoa(i)+`",`+b+`}`, nil)
+	}
+	call(t, srv, "POST", "/api/transactions", `{"occurred_at":"2026-01-01T10:00:00+07:00","source":"manual","type":"out","category":"Jajan","account":"Jago","amount":1}`, nil) // before anchor
+	bal := func() float64 {
+		var p struct{ Assets []Asset }
+		call(t, srv, "GET", "/api/assets", "", &p)
+		return p.Assets[0].Balance
+	}
+	if b := bal(); b != 970000 {
+		t.Fatalf("live balance %v", b)
+	}
+	time.Sleep(time.Second)
+	call(t, srv, "PATCH", "/api/assets/"+strconv.FormatInt(x.ID, 10), `{"note":"x"}`, nil) // moves the anchor, keeps the flow
+	if b := bal(); b != 970000 {
+		t.Fatalf("after patch %v", b)
+	}
+}

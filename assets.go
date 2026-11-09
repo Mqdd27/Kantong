@@ -128,6 +128,9 @@ func (a *app) portfolio(ctx context.Context) (p portfolio, err error) {
 
 	for i := range p.Assets {
 		x := &p.Assets[i]
+		if x.Balance, err = a.liveBalance(ctx, *x); err != nil {
+			return p, err
+		}
 		rate, err := a.idrRate(ctx, x.Currency, "")
 		if err != nil {
 			p.MissingRates = append(p.MissingRates, x.Currency)
@@ -248,6 +251,10 @@ func (a *app) patchAsset(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, err)
 		return
 	}
+	if x.Balance, err = a.liveBalance(r.Context(), x); err != nil { // the save becomes the new anchor
+		a.fail(w, err)
+		return
+	}
 	// Decoding onto the current row means omitted fields keep their value.
 	if !decode(w, r, &x) || !validAsset(w, &x) {
 		return
@@ -286,19 +293,31 @@ func (a *app) deleteAsset(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// liveBalance is the stored balance plus in/out transactions booked to an account of the same name
+// after the balance was last saved, so a bank asset follows spending without manual updates.
+// Transfers are skipped: they carry no destination account.
+func (a *app) liveBalance(ctx context.Context, x Asset) (float64, error) {
+	var d float64
+	err := a.db.QueryRowContext(ctx, `SELECT COALESCE(SUM(CASE type WHEN 'in' THEN 1 ELSE -1 END *
+		CASE WHEN currency = 'IDR' THEN amount ELSE orig_amount END), 0)
+		FROM transactions WHERE type IN ('in', 'out') AND lower(trim(account)) = lower(?) AND currency = ?
+		AND julianday(occurred_at) > julianday(?)`, strings.TrimSpace(x.Name), x.Currency, x.UpdatedAt).Scan(&d)
+	return x.Balance + d, err
+}
+
 // ---------- orders ----------
 
 // applyOrder moves a successful order into the asset's balance and cost basis.
 func applyOrder(tx *sql.Tx, assetID int64, side string, amount float64) error {
 	if side == "buy" {
-		_, err := tx.Exec(`UPDATE assets SET balance = balance + ?, invested = COALESCE(invested, 0) + ?,
-			updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?`, amount, amount, assetID)
+		_, err := tx.Exec(`UPDATE assets SET balance = balance + ?, invested = COALESCE(invested, 0) + ? WHERE id = ?`,
+			amount, amount, assetID)
 		return err
 	}
 	// sell: reduce cost basis proportionally to the share of value sold
 	_, err := tx.Exec(`UPDATE assets SET
 		invested = CASE WHEN invested IS NULL OR balance <= 0 THEN invested ELSE MAX(invested * (1 - MIN(? / balance, 1)), 0) END,
-		balance = balance - ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?`, amount, amount, assetID)
+		balance = balance - ? WHERE id = ?`, amount, amount, assetID)
 	return err
 }
 
