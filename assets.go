@@ -255,13 +255,16 @@ func (a *app) patchAsset(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, err)
 		return
 	}
+	tracked := x.Balance
 	// Decoding onto the current row means omitted fields keep their value.
 	if !decode(w, r, &x) || !validAsset(w, &x) {
 		return
 	}
+	now := time.Now().UTC().Truncate(time.Second)
+	x.UpdatedAt = now.Format(time.RFC3339)
 	_, err = a.db.Exec(`UPDATE assets SET name = ?, kind = ?, currency = ?, balance = ?, invested = ?, note = ?, target = ?, target_date = ?,
-		return_pct = ?, maturity = ?, payout = ?, face = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?`,
-		x.Name, x.Kind, x.Currency, x.Balance, x.Invested, x.Note, x.Target, x.TargetDate, x.ReturnPct, x.Maturity, x.Payout, x.Face, id)
+		return_pct = ?, maturity = ?, payout = ?, face = ?, updated_at = ? WHERE id = ?`,
+		x.Name, x.Kind, x.Currency, x.Balance, x.Invested, x.Note, x.Target, x.TargetDate, x.ReturnPct, x.Maturity, x.Payout, x.Face, x.UpdatedAt, id)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
 			writeErr(w, http.StatusConflict, "asset name already exists")
@@ -271,8 +274,29 @@ func (a *app) patchAsset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	x.ID = id
+	if err := a.adjust(x, tracked, now); err != nil {
+		a.fail(w, err)
+		return
+	}
 	a.assetsChanged()
 	writeJSON(w, http.StatusOK, x)
+}
+
+// adjust records the gap between the tracked and the newly entered balance of a cash account
+// (interest, admin fees, spending without an email) as a "Penyesuaian" transaction in Review,
+// so the user can give it a real category. It sits exactly on the new anchor, so it doesn't move the balance again.
+func (a *app) adjust(x Asset, tracked float64, at time.Time) error {
+	diff := int64(math.Round(x.Balance - tracked))
+	if diff == 0 || x.Currency != "IDR" || (x.Kind != "bank" && x.Kind != "ewallet" && x.Kind != "cash") {
+		return nil
+	}
+	t := Tx{OccurredAt: at.In(wib).Format(time.RFC3339), Amount: diff, Type: "in", Category: "Penyesuaian",
+		Merchant: "Penyesuaian saldo", Account: x.Name, Note: "selisih saldo tercatat vs saldo asli",
+		Source: "manual", NeedsReview: true, Currency: "IDR"}
+	if diff < 0 {
+		t.Amount, t.Type = -diff, "out"
+	}
+	return a.insertTx(&t)
 }
 
 func (a *app) deleteAsset(w http.ResponseWriter, r *http.Request) {

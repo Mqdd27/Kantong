@@ -426,6 +426,23 @@ func TestAssetFollowsTransactions(t *testing.T) {
 	if b := bal(); b != 896000 {
 		t.Fatalf("after patch %v", b)
 	}
+	// real balance is 4.200 higher (interest): balance becomes 900.200 and the gap lands in Review
+	call(t, srv, "PATCH", "/api/assets/"+strconv.FormatInt(x.ID, 10), `{"balance":900200}`, nil)
+	var txs []Tx
+	call(t, srv, "GET", "/api/transactions?month="+time.Now().In(wib).Format("2006-01"), "", &txs)
+	var adj *Tx
+	for i := range txs {
+		if txs[i].Category == "Penyesuaian" {
+			adj = &txs[i]
+		}
+	}
+	if adj == nil || adj.Type != "in" || adj.Amount != 4200 || !adj.NeedsReview || adj.Account != "Jago" {
+		t.Fatalf("adjustment %+v", adj)
+	}
+	call(t, srv, "PATCH", "/api/transactions/"+strconv.FormatInt(adj.ID, 10), `{"needs_review":false}`, nil)
+	if b := bal(); b != 900200 { // approving it must not count it twice
+		t.Fatalf("after adjustment %v", b)
+	}
 }
 
 // Buying a bond: the bank debit lowers Jago right away, the bond grows only when the order succeeds.

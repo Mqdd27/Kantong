@@ -43,6 +43,8 @@ Aset dicocokkan dari nama. Kalau namanya sama dengan aset yang sudah ada (misaln
 | Saham | Nilai sekarang dan modal (total) |
 | Bank | Saldo, dan bunga % per tahun kalau tertera |
 
+Saldo bank, e-wallet, atau tunai yang beda dari saldo yang tercatat di Kantong bikin transaksi **Penyesuaian** (selisihnya) di Review, jadi bunga atau biaya admin tetap kelihatan.
+
 Nomor rekening tidak pernah disimpan. Field yang tidak terbaca jelas dilewati, dan Hermes menyebutkan field mana.
 
 ## Troubleshooting
