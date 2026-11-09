@@ -296,13 +296,14 @@ func (a *app) deleteAsset(w http.ResponseWriter, r *http.Request) {
 // liveBalance is the stored balance plus transactions booked to an account of the same name
 // after the balance was last saved, so a bank asset follows spending without manual updates.
 // in adds, out subtracts, a transfer subtracts from account and adds to to_account.
+// Transactions still waiting in Review don't count until approved.
 func (a *app) liveBalance(ctx context.Context, x Asset) (float64, error) {
 	var d float64
 	err := a.db.QueryRowContext(ctx, `SELECT COALESCE(SUM(
 		(CASE WHEN type = 'in' THEN 1 WHEN lower(trim(account)) = ?1 THEN -1 ELSE 0 END
 		 + CASE WHEN type = 'transfer' AND lower(to_account) = ?1 THEN 1 ELSE 0 END)
 		* CASE WHEN currency = 'IDR' THEN amount ELSE orig_amount END), 0)
-		FROM transactions WHERE (lower(trim(account)) = ?1 OR lower(to_account) = ?1) AND currency = ?2
+		FROM transactions WHERE (lower(trim(account)) = ?1 OR lower(to_account) = ?1) AND currency = ?2 AND needs_review = 0
 		AND julianday(occurred_at) > julianday(?3)`, strings.ToLower(strings.TrimSpace(x.Name)), x.Currency, x.UpdatedAt).Scan(&d)
 	return x.Balance + d, err
 }

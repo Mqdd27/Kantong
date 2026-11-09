@@ -18,6 +18,7 @@
 <MonthBar />
 
 {#if pending.length}
+  <p class="hint">Belum dihitung ke saldo aset sampai kamu setujui.</p>
   <label class="remember"><input type="checkbox" bind:checked={remember} /> Ingat pilihan untuk merchant yang sama</label>
 {/if}
 
@@ -41,6 +42,11 @@
 {/each}
 
 <style>
+  .hint {
+    color: var(--muted);
+    font-size: 13px;
+    margin: 0 0 8px;
+  }
   .remember {
     display: flex;
     gap: 8px;

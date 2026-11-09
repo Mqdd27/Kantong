@@ -406,18 +406,50 @@ func TestAssetFollowsTransactions(t *testing.T) {
 	} {
 		call(t, srv, "POST", "/api/transactions", `{"occurred_at":"`+at+`","source":"manual","source_ref":"r`+strconv.Itoa(i)+`",`+b+`}`, nil)
 	}
+	var rev Tx
+	call(t, srv, "POST", "/api/transactions", `{"occurred_at":"`+at+`","source":"manual","needs_review":true,"type":"out","category":"Jajan","account":"Jago","amount":5000}`, &rev)
 	call(t, srv, "POST", "/api/transactions", `{"occurred_at":"2026-01-01T10:00:00+07:00","source":"manual","type":"out","category":"Jajan","account":"Jago","amount":1}`, nil) // before anchor
 	bal := func() float64 {
 		var p struct{ Assets []Asset }
 		call(t, srv, "GET", "/api/assets", "", &p)
 		return p.Assets[0].Balance
 	}
-	if b := bal(); b != 901000 { // 1jt - 50rb + 20rb - 99rb + 30rb
+	if b := bal(); b != 901000 { // 1jt - 50rb + 20rb - 99rb + 30rb, Review item not yet
 		t.Fatalf("live balance %v", b)
+	}
+	call(t, srv, "PATCH", "/api/transactions/"+strconv.FormatInt(rev.ID, 10), `{"needs_review":false}`, nil)
+	if b := bal(); b != 896000 {
+		t.Fatalf("approved review %v", b)
 	}
 	time.Sleep(time.Second)
 	call(t, srv, "PATCH", "/api/assets/"+strconv.FormatInt(x.ID, 10), `{"note":"x"}`, nil) // moves the anchor, keeps the flow
-	if b := bal(); b != 901000 {
+	if b := bal(); b != 896000 {
 		t.Fatalf("after patch %v", b)
+	}
+}
+
+// Buying a bond: the bank debit lowers Jago right away, the bond grows only when the order succeeds.
+func TestBondPurchaseFlow(t *testing.T) {
+	srv := newTestServer(t)
+	call(t, srv, "POST", "/api/assets", `{"name":"Jago","kind":"bank","balance":10000000}`, nil)
+	time.Sleep(2 * time.Second)
+	at := time.Now().Add(-time.Second).In(wib).Format(time.RFC3339)
+	call(t, srv, "POST", "/api/transactions", `{"occurred_at":"`+at+`","source":"email","source_ref":"<d@jago>","type":"out","category":"Investasi","account":"Jago","amount":5000000}`, nil)
+	call(t, srv, "POST", "/api/orders", `{"asset":"FR0100","kind":"bond","side":"buy","amount":5000000,"status":"pending","order_ref":"o1","source_ref":"<o1@bibit>","occurred_at":"`+at+`"}`, nil)
+	get := func() map[string]float64 {
+		var p struct{ Assets []Asset }
+		call(t, srv, "GET", "/api/assets", "", &p)
+		m := map[string]float64{}
+		for _, x := range p.Assets {
+			m[x.Name] = x.Balance
+		}
+		return m
+	}
+	if m := get(); m["Jago"] != 5e6 || m["FR0100"] != 0 {
+		t.Fatalf("pending %v", m)
+	}
+	call(t, srv, "PATCH", "/api/orders/o1", `{"status":"success"}`, nil)
+	if m := get(); m["Jago"] != 5e6 || m["FR0100"] != 5e6 {
+		t.Fatalf("success %v", m)
 	}
 }
