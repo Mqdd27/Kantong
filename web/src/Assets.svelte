@@ -1,6 +1,8 @@
 <script>
   import { onMount } from 'svelte'
   import PerfChart from './PerfChart.svelte'
+  import TxRow from './TxRow.svelte'
+  import { api } from './lib/api.js'
   import { s, fmtIDR, fmtCur, fmtShort, loadAssets, CURRENCIES, saveAsset, deleteAsset, view, toggleHide } from './lib/store.svelte.js'
 
   const KINDS = {
@@ -39,7 +41,15 @@
       ? { ...a, invested: a.invested ?? '', target: a.target ?? '', target_date: a.target_date ?? '', return_pct: a.return_pct ?? '', maturity: a.maturity ?? '', face: a.face ?? '' }
       : { name: '', kind: 'bank', currency: 'IDR', balance: '', invested: '', note: '', target: '', target_date: '', return_pct: '', maturity: '', payout: 0, face: '' }
     edit = a ?? {}
+    // cash-like accounts open on their history, investments on the edit form
+    tab = a && CASHLIKE.has(a.kind) ? 'history' : 'edit'
+    act = null
+    if (a) api(`/assets/${a.id}/activity`).then((r) => (act = r)).catch(() => (act = { transactions: [], orders: [] }))
   }
+  const CASHLIKE = new Set(['bank', 'ewallet', 'forex', 'cash'])
+  const STATUS = { pending: 'menunggu', success: 'berhasil', failed: 'gagal' }
+  let tab = $state('edit')
+  let act = $state(null)
   const fmtMon = new Intl.DateTimeFormat('id-ID', { month: 'short', year: 'numeric', timeZone: 'UTC' })
   // savings goal: progress and the monthly amount still needed to hit it by target_date
   function goal(a) {
@@ -185,6 +195,35 @@
 
 {#if edit}
   <dialog bind:this={dialog} onclose={() => (edit = null)} onclick={(e) => e.target === dialog && dialog.close()}>
+    {#if edit.id}
+      <div class="tabs">
+        <button type="button" class:on={tab === 'history'} onclick={() => (tab = 'history')}>Riwayat</button>
+        <button type="button" class:on={tab === 'edit'} onclick={() => (tab = 'edit')}>Edit</button>
+      </div>
+    {/if}
+    {#if tab === 'history'}
+      <section class="hist">
+        <h2>{edit.name}</h2>
+        <p class="muted small">Transaksi yang pakai akun “{edit.name}”, termasuk transfer masuk dan penyesuaian saldo.</p>
+        {#if !act}
+          <p class="muted">Memuat…</p>
+        {:else}
+          {#each act.orders as o (o.id)}
+            <div class="order">
+              <span>{o.side === 'buy' ? 'Beli' : 'Jual'} · {STATUS[o.status]}<small>{fmtShort.format(new Date(o.occurred_at))}</small></span>
+              <b>{fmtCur(o.amount, edit.currency)}</b>
+            </div>
+          {/each}
+          {#each act.transactions as tx (tx.id)}
+            <TxRow {tx} showDate account={edit.name} />
+          {/each}
+          {#if !act.transactions.length && !act.orders.length}
+            <p class="muted">Belum ada transaksi dengan akun “{edit.name}”. Isi kolom Akun saat mencatat transaksi.</p>
+          {/if}
+        {/if}
+        <div class="actions"><button type="button" onclick={() => dialog.close()}>Tutup</button></div>
+      </section>
+    {:else}
     <form onsubmit={save}>
       <h2>{edit.id ? 'Edit aset' : 'Tambah aset'}</h2>
       <label>Nama <input bind:value={f.name} required placeholder="mis. Jago Pocket SGD, Stockbit, ORI027" /></label>
@@ -256,6 +295,7 @@
         <button class="primary">Simpan</button>
       </div>
     </form>
+    {/if}
   </dialog>
 {/if}
 
@@ -447,6 +487,49 @@
       margin: auto;
       border-radius: 16px;
     }
+  }
+  .tabs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    padding: 16px 16px 0;
+  }
+  .tabs button {
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--text);
+    border-radius: 10px;
+    padding: 8px 0;
+  }
+  .tabs .on {
+    border-color: var(--accent);
+    font-weight: 600;
+  }
+  .hist {
+    padding: 16px 16px calc(env(safe-area-inset-bottom) + 16px);
+    max-height: 75vh;
+    overflow-y: auto;
+  }
+  .hist .muted {
+    color: var(--muted);
+  }
+  .hist .small {
+    font-size: 13px;
+    margin: 4px 0 8px;
+  }
+  .order {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .order span {
+    display: grid;
+  }
+  .order small {
+    color: var(--muted);
+    font-size: 13px;
   }
   dialog::backdrop {
     background: rgb(0 0 0 / 0.45);

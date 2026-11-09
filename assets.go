@@ -299,6 +299,59 @@ func (a *app) adjust(x Asset, tracked float64, at time.Time) error {
 	return a.insertTx(&t)
 }
 
+// assetActivity is an asset's history, newest first: transactions booked to (or transferred into)
+// the account of the same name, including balance adjustments, plus its investment orders.
+func (a *app) assetActivity(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	var name string
+	if err := a.db.QueryRow(`SELECT name FROM assets WHERE id = ?`, id).Scan(&name); errors.Is(err, sql.ErrNoRows) {
+		writeErr(w, http.StatusNotFound, "not found")
+		return
+	} else if err != nil {
+		a.fail(w, err)
+		return
+	}
+	out := struct {
+		Transactions []Tx    `json:"transactions"`
+		Orders       []Order `json:"orders"`
+	}{[]Tx{}, []Order{}}
+	// ponytail: last 200 only, add paging when an account outgrows it
+	rows, err := a.db.Query(`SELECT `+txCols+` FROM transactions WHERE lower(trim(account)) = lower(?1) OR lower(to_account) = lower(?1)
+		ORDER BY occurred_at DESC, id DESC LIMIT 200`, strings.TrimSpace(name))
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		t, err := scanTx(rows)
+		if err != nil {
+			a.fail(w, err)
+			return
+		}
+		out.Transactions = append(out.Transactions, t)
+	}
+	orows, err := a.db.Query(`SELECT `+orderCols+` FROM asset_orders o JOIN assets a ON a.id = o.asset_id
+		WHERE o.asset_id = ? ORDER BY o.occurred_at DESC LIMIT 200`, id)
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	defer orows.Close()
+	for orows.Next() {
+		o, err := scanOrder(orows)
+		if err != nil {
+			a.fail(w, err)
+			return
+		}
+		out.Orders = append(out.Orders, o)
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
 func (a *app) deleteAsset(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(w, r)
 	if !ok {

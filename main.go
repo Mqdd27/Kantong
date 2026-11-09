@@ -172,6 +172,7 @@ func (a *app) routes() http.Handler {
 	api.HandleFunc("GET /api/export.xlsx", a.exportXLSX)
 	api.HandleFunc("GET /api/assets", a.listAssets)
 	api.HandleFunc("GET /api/assets/history", a.assetHistory)
+	api.HandleFunc("GET /api/assets/{id}/activity", a.assetActivity)
 	api.HandleFunc("POST /api/assets", a.createAsset)
 	api.HandleFunc("PATCH /api/assets/{id}", a.patchAsset)
 	api.HandleFunc("DELETE /api/assets/{id}", a.deleteAsset)

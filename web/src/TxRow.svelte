@@ -1,8 +1,12 @@
 <script>
   import { fmtIDR, fmtTime, fmtShort, fmtCur } from './lib/store.svelte.js'
 
-  let { tx, onclick, showDate = false } = $props()
-  const sign = $derived(tx.type === 'in' ? '+' : tx.type === 'out' ? '−' : '')
+  /** account: show a transfer as − (out of it) or + (into it) from that account's view */
+  let { tx, onclick, showDate = false, account = '' } = $props()
+  const into = (n) => n.trim().toLowerCase() === account.trim().toLowerCase()
+  const sign = $derived(
+    tx.type === 'in' ? '+' : tx.type === 'out' ? '−' : !account ? '' : into(tx.to_account || '') ? '+' : '−',
+  )
 </script>
 
 <button class="row" {onclick}>

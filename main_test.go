@@ -443,6 +443,15 @@ func TestAssetFollowsTransactions(t *testing.T) {
 	if b := bal(); b != 900200 { // approving it must not count it twice
 		t.Fatalf("after adjustment %v", b)
 	}
+	var act struct {
+		Transactions []Tx
+		Orders       []Order
+	}
+	call(t, srv, "GET", "/api/assets/"+strconv.FormatInt(x.ID, 10)+"/activity", "", &act)
+	// out, in, transfer out, transfer in from BCA, review item, old one, adjustment; BCA's own spending excluded
+	if len(act.Transactions) != 7 || act.Transactions[0].Category != "Penyesuaian" || act.Orders == nil {
+		t.Fatalf("activity %d %+v", len(act.Transactions), act.Transactions)
+	}
 }
 
 // Buying a bond: the bank debit lowers Jago right away, the bond grows only when the order succeeds.
@@ -468,5 +477,14 @@ func TestBondPurchaseFlow(t *testing.T) {
 	call(t, srv, "PATCH", "/api/orders/o1", `{"status":"success"}`, nil)
 	if m := get(); m["Jago"] != 5e6 || m["FR0100"] != 5e6 {
 		t.Fatalf("success %v", m)
+	}
+	var p struct{ Assets []Asset }
+	call(t, srv, "GET", "/api/assets", "", &p)
+	for _, x := range p.Assets {
+		var act struct{ Orders []Order }
+		call(t, srv, "GET", "/api/assets/"+strconv.FormatInt(x.ID, 10)+"/activity", "", &act)
+		if x.Name == "FR0100" && (len(act.Orders) != 1 || act.Orders[0].Status != "success") {
+			t.Fatalf("orders %+v", act.Orders)
+		}
 	}
 }
