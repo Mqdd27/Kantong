@@ -6,7 +6,12 @@ Money manager pribadi yang self-hosted. Notifikasi transaksi dari email bank/bro
 
 Satu binary Go (API + SQLite + SSE + PWA Svelte yang di-embed), image Docker ±22 MB, RAM idle ±3 MB.
 
-> 🤖 **Setup pakai AI agent:** kasih [docs/AGENT-SETUP.md](docs/AGENT-SETUP.md) ke Claude Code, Codex, atau agent lain. Agent-nya bakal setup dari server kosong sampai email bank + Hermes jalan.
+> 🤖 **Setup pakai AI agent:** kasih [docs/AGENT-SETUP.md](docs/AGENT-SETUP.md) ke Claude Code, Codex, atau agent lain. Agent-nya bakal setup dari server kosong sampai email bank + Hermes jalan. Contoh prompt:
+>
+> ```
+> Baca dan ikuti https://raw.githubusercontent.com/Mqdd27/Kantong/main/docs/AGENT-SETUP.md
+> untuk setup Kantong di server aku (ssh user@host). Tanya dulu kalau butuh password atau keputusan.
+> ```
 
 ![Beranda](docs/screenshots/home.png)
 
