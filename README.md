@@ -65,6 +65,8 @@ Skill kedua, [`hermes/finance-assets`](hermes/finance-assets), mengisi aset dari
 
 ## Jalanin
 
+> Mau di-setup sama AI agent (Claude Code, Codex, dll.) dari server kosong sampai email bank + Hermes jalan? Kasih agent-nya **[docs/AGENT-SETUP.md](docs/AGENT-SETUP.md)**.
+
 ```sh
 cp .env.example .env        # isi tiap secret: openssl rand -hex 32
 docker compose up -d --build
