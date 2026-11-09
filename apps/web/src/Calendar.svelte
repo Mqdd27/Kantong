@@ -6,7 +6,7 @@
 
   let { open } = $props()
 
-  const shortRaw = new Intl.NumberFormat('id-ID', { notation: 'compact', maximumFractionDigits: 1 })
+  const shortRaw = new Intl.NumberFormat('id-ID', { notation: 'compact', maximumSignificantDigits: 2 }) // fits a day cell
   const short = { format: (n) => mask(shortRaw.format(n)) }
   const today = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10)
   const WEEK = ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min']
@@ -120,7 +120,7 @@
   .day {
     min-width: 0;
     min-height: 58px;
-    padding: 5px 4px;
+    padding: 5px 3px 5px 5px;
     border: 1px solid transparent;
     border-radius: 8px;
     background: color-mix(in srgb, var(--out) var(--heat), var(--surface));
@@ -131,6 +131,12 @@
     gap: 2px;
     font: inherit;
     text-align: left;
+    overflow: hidden;
+  }
+  .day span {
+    max-width: 100%;
+    white-space: nowrap;
+    letter-spacing: -0.3px;
   }
   .future {
     background: none;
