@@ -6,6 +6,8 @@ Money manager pribadi yang self-hosted. Notifikasi transaksi dari email bank/bro
 
 Satu binary Go (API + SQLite + SSE + PWA Svelte yang di-embed), image Docker ±22 MB, RAM idle ±3 MB.
 
+> 🤖 **Setup pakai AI agent:** kasih [docs/AGENT-SETUP.md](docs/AGENT-SETUP.md) ke Claude Code, Codex, atau agent lain. Agent-nya bakal setup dari server kosong sampai email bank + Hermes jalan.
+
 ![Beranda](docs/screenshots/home.png)
 
 <p align="center">
@@ -64,8 +66,6 @@ Skill agent-nya ([Hermes](https://github.com/NousResearch/hermes-agent)) ada di 
 Skill kedua, [`hermes/finance-assets`](hermes/finance-assets), mengisi aset dari screenshot portofolio yang kamu kirim ke Hermes di Telegram. Panduannya ada di **[docs/hermes-assets.md](docs/hermes-assets.md)**. Skill ketiga, [`hermes/finance-receipt`](hermes/finance-receipt), mencatat transaksi dari foto struk belanja: **[docs/hermes-receipt.md](docs/hermes-receipt.md)**.
 
 ## Jalanin
-
-> Mau di-setup sama AI agent (Claude Code, Codex, dll.) dari server kosong sampai email bank + Hermes jalan? Kasih agent-nya **[docs/AGENT-SETUP.md](docs/AGENT-SETUP.md)**.
 
 ```sh
 cp .env.example .env        # isi tiap secret: openssl rand -hex 32
