@@ -1,9 +1,10 @@
 *.db
 *.db-*
 .env
-/money-manager
-web/node_modules/
+node_modules/
+.turbo/
+apps/api/kantong
 # build output; .gitkeep keeps the go:embed pattern valid on a fresh clone
-web/dist/*
-!web/dist/.gitkeep
+apps/api/web/dist/*
+!apps/api/web/dist/.gitkeep
 .DS_Store

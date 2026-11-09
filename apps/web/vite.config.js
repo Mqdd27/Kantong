@@ -29,5 +29,7 @@ export default defineConfig({
       },
     }),
   ],
+  // Go embeds this dir (apps/api/main.go: go:embed all:web/dist)
+  build: { outDir: '../api/web/dist', emptyOutDir: true },
   server: { proxy: { '/api': 'http://127.0.0.1:8080' } },
 })

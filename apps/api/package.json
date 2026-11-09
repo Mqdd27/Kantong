@@ -1,0 +1,9 @@
+{
+  "name": "api",
+  "private": true,
+  "scripts": {
+    "dev": "go run .",
+    "build": "go build -o kantong .",
+    "test": "go test ./..."
+  }
+}

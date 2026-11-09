@@ -1,0 +1,16 @@
+{
+  "name": "kantong",
+  "private": true,
+  "packageManager": "npm@11.19.0",
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "test": "turbo run test"
+  },
+  "devDependencies": {
+    "turbo": "^2.11.10"
+  }
+}

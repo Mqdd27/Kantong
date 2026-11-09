@@ -87,12 +87,14 @@ Perubahan `.env` baru terpakai setelah `docker compose up -d --force-recreate`.
 
 ### Dev
 
+Monorepo [Turborepo](https://turborepo.com): `apps/api` (Go, embed `apps/api/web/dist`) dan `apps/web` (Svelte PWA, build ke `apps/api/web/dist`).
+
 ```sh
-cd web && npm ci && npm run build && cd ..   # build PWA ke web/dist (di-embed)
+npm ci
+npm run build                                # turbo: web lalu api → apps/api/kantong
+npm test                                     # go test (setelah web build)
 set -a; . ./.env; set +a
-DB_PATH=./money.db go run .
-go test ./...
-cd web && npm run dev                        # Vite + proxy /api ke :8080
+DB_PATH=./money.db npm run dev               # go run + Vite (proxy /api ke :8080) paralel
 ```
 
 ## API

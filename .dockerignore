@@ -2,5 +2,7 @@
 *.db
 *.db-*
 .env
-web/node_modules
-web/dist
+**/node_modules
+**/.turbo
+apps/api/web/dist
+apps/api/kantong

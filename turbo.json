@@ -1,0 +1,13 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+  "tasks": {
+    "web#build": { "outputs": ["../api/web/dist/**"] },
+    "api#build": { "dependsOn": ["web#build"], "outputs": ["kantong"] },
+    "test": { "dependsOn": ["web#build"] },
+    "dev": {
+      "cache": false,
+      "persistent": true,
+      "passThroughEnv": ["PORT", "DB_PATH", "API_TOKEN", "APP_PASSWORD", "SESSION_SECRET", "COOKIE_SECURE", "TELEGRAM_*", "FX_URL", "GOLD_URL"]
+    }
+  }
+}
