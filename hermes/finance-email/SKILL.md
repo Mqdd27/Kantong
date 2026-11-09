@@ -25,7 +25,7 @@ Scripts live in `~/.hermes/skills/finance-email/scripts/` (Python stdlib only).
 2. **Parse (you, only when woken)** — for each email in `data.emails`, apply `parsing-rules.md`.
    - Merchant matches a rule in `data.rules` (case-insensitive *contains*) -> use that rule's `type` and `category`, `confidence` = 1.0. Check the real field names in the rules payload.
    - `category` must be a valid name for the `type` in `data.categories`.
-   - Transaction fields: `occurred_at, amount, type, category, merchant, account, note, source_ref` (= Message-ID incl. `<>`), `confidence`, `needs_review` (true if confidence < 0.7 or anything flagged in the rules). No account numbers/balances anywhere.
+   - Transaction fields: `occurred_at, amount, type, category, merchant, account, to_account, note, source_ref` (= Message-ID incl. `<>`), `confidence`, `needs_review` (true if confidence < 0.7 or anything flagged in the rules). `to_account` only for transfers between own accounts. No account numbers/balances anywhere.
    - Foreign-currency spend (e.g. Claude/Anthropic billed in USD): set `currency` (ISO, e.g. "USD") and `orig_amount` (e.g. 20.0).
      Set `amount` only when the email states the IDR actually debited; otherwise omit it and the API converts at that day's rate.
    - Investment order emails (Bibit/Stockbit: konfirmasi pembelian, pembelian berhasil/gagal, penjualan) -> NOT a transaction;

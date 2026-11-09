@@ -99,7 +99,9 @@ export function connect() {
   es.addEventListener('transaction.deleted', (e) => remove(JSON.parse(e.data).id))
   es.addEventListener('assets.changed', loadAssets)
   es.addEventListener('budget.changed', budgetSoon)
-  for (const ev of ['transaction.created', 'transaction.updated', 'transaction.deleted']) es.addEventListener(ev, budgetSoon)
+  // asset balances follow transactions on their account, so refresh them too once loaded
+  const txChanged = () => { budgetSoon(); if (s.portfolio.assets.length) loadAssets() }
+  for (const ev of ['transaction.created', 'transaction.updated', 'transaction.deleted']) es.addEventListener(ev, txChanged)
   es.onerror = () => {
     // iOS drops the stream when the app is backgrounded: reconnect and refetch.
     s.live = false

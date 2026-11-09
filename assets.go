@@ -293,15 +293,17 @@ func (a *app) deleteAsset(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// liveBalance is the stored balance plus in/out transactions booked to an account of the same name
+// liveBalance is the stored balance plus transactions booked to an account of the same name
 // after the balance was last saved, so a bank asset follows spending without manual updates.
-// Transfers are skipped: they carry no destination account.
+// in adds, out subtracts, a transfer subtracts from account and adds to to_account.
 func (a *app) liveBalance(ctx context.Context, x Asset) (float64, error) {
 	var d float64
-	err := a.db.QueryRowContext(ctx, `SELECT COALESCE(SUM(CASE type WHEN 'in' THEN 1 ELSE -1 END *
-		CASE WHEN currency = 'IDR' THEN amount ELSE orig_amount END), 0)
-		FROM transactions WHERE type IN ('in', 'out') AND lower(trim(account)) = lower(?) AND currency = ?
-		AND julianday(occurred_at) > julianday(?)`, strings.TrimSpace(x.Name), x.Currency, x.UpdatedAt).Scan(&d)
+	err := a.db.QueryRowContext(ctx, `SELECT COALESCE(SUM(
+		(CASE WHEN type = 'in' THEN 1 WHEN lower(trim(account)) = ?1 THEN -1 ELSE 0 END
+		 + CASE WHEN type = 'transfer' AND lower(to_account) = ?1 THEN 1 ELSE 0 END)
+		* CASE WHEN currency = 'IDR' THEN amount ELSE orig_amount END), 0)
+		FROM transactions WHERE (lower(trim(account)) = ?1 OR lower(to_account) = ?1) AND currency = ?2
+		AND julianday(occurred_at) > julianday(?3)`, strings.ToLower(strings.TrimSpace(x.Name)), x.Currency, x.UpdatedAt).Scan(&d)
 	return x.Balance + d, err
 }
 

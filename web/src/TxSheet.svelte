@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte'
-  import { s, fmtNum, CURRENCIES, jakartaLocal, createTx, updateTx, deleteTx, addRule } from './lib/store.svelte.js'
+  import { s, fmtNum, CURRENCIES, jakartaLocal, createTx, updateTx, deleteTx, addRule, loadAssets } from './lib/store.svelte.js'
 
   /** tx = undefined → add, otherwise edit */
   let { tx, onclose } = $props()
@@ -10,6 +10,8 @@
   let category = $state(tx?.category ?? '')
   let merchant = $state(tx?.merchant ?? '')
   let note = $state(tx?.note ?? '')
+  let account = $state(tx?.account ?? '')
+  let toAccount = $state(tx?.to_account ?? '')
   let amountText = $state(tx ? fmtNum.format(tx.amount) : '')
   let currency = $state(tx?.currency ?? 'IDR')
   let orig = $state(tx?.orig_amount ?? '')
@@ -25,7 +27,10 @@
     if (cats.length && !cats.some((c) => c.name === category)) category = cats[0].name
   })
 
-  onMount(() => dialog.showModal())
+  onMount(() => {
+    dialog.showModal()
+    if (!s.portfolio.assets.length) loadAssets() // account suggestions
+  })
 
   function onAmount(e) {
     const n = e.currentTarget.value.replace(/\D/g, '')
@@ -35,12 +40,12 @@
   function save(e) {
     e.preventDefault()
     if (foreign ? !(orig > 0) : !amount) return
-    const fields = { occurred_at: when + ':00+07:00', type, category, merchant, note, currency }
+    const fields = { occurred_at: when + ':00+07:00', type, category, merchant, note, currency, account, to_account: type === 'transfer' ? toAccount : '' }
     if (foreign) fields.orig_amount = Number(orig)
     if (amount) fields.amount = amount // foreign + empty IDR: server converts at that day's rate
     if (corrected && always) addRule(merchant, type, category)
     if (tx) updateTx(tx.id, { ...fields, needs_review: false })
-    else createTx({ ...fields, account: '', source: 'manual' })
+    else createTx({ ...fields, source: 'manual' })
     dialog.close()
   }
 
@@ -92,6 +97,19 @@
     {#if corrected}
       <label class="check"><input type="checkbox" bind:checked={always} /> Selalu kategorikan “{merchant.trim()}” sebagai {category}</label>
     {/if}
+    <div class="amt">
+      <label>{type === 'transfer' ? 'Dari akun' : 'Akun'}
+        <input bind:value={account} list="accounts" autocomplete="off" placeholder="mis. Jago" />
+      </label>
+      {#if type === 'transfer'}
+        <label>Ke akun
+          <input bind:value={toAccount} list="accounts" autocomplete="off" placeholder="kosong = ke orang lain" />
+        </label>
+      {/if}
+    </div>
+    <datalist id="accounts">
+      {#each s.portfolio.assets as a}<option value={a.name}></option>{/each}
+    </datalist>
     <label>Catatan
       <input bind:value={note} autocomplete="off" />
     </label>

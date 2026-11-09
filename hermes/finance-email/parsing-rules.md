@@ -26,7 +26,7 @@ Allowlist: noreply@jago.com, no-reply@stockbit.com, noreply@krom.id, bca@bca.co.
 - Promo, OTP, login info, monthly e-statement/laporan
 
 ## Output
-Fields: occurred_at, amount, type, category, merchant, account, note, source="email", source_ref (Message-ID with <>), confidence, needs_review (confidence<0.7).
+Fields: occurred_at, amount, type, category, merchant, account, to_account, note, source="email", source_ref (Message-ID with <>), confidence, needs_review (confidence<0.7).
 - amount: int rupiah, positive. Strip "Rp", thousand dots, ",00". No amount found -> skip.
 - occurred_at ISO 8601 with +07:00 ("WIB").
 - Never output account/card numbers (including PAN, terminal ID) or balances. Do not put them in `note`.
@@ -51,6 +51,8 @@ Planned defaults (from user spec, not from emails):
 - Beli reksadana/saham/obligasi -> out / Investasi; setor/tarik RDN or top-up own account -> transfer / Transfer.
 - BCA/KlikBCA transfer to person -> out / Lainnya unless merchant is clear; incoming -> in / Transfer Masuk.
 - Account name = Jago, BCA, SeaBank, Stockbit, Bibit, Krom by sender.
+- to_account (transfer only): the destination account name when it is the user's own (same names as above, e.g. Jago -> SeaBank = account Jago, to_account SeaBank).
+  Kantong moves both asset balances with it. Unknown destination -> leave empty (only the source balance drops).
 - E-wallet top-up (ShopeePay, GoPay, OVO, DANA) from any bank: the user spends it right away (e.g. ShopeeFood), so it is NOT a transfer.
   -> type out, merchant = the e-wallet app (e.g. "ShopeePay"), note "Top up", category = best guess from context (Makan if nothing else is known),
   needs_review = true so the user picks the real category once in Review. Never also record the purchase made with that balance.

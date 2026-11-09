@@ -400,7 +400,8 @@ func TestAssetFollowsTransactions(t *testing.T) {
 	for i, b := range []string{
 		`"type":"out","category":"Jajan","account":"jago","amount":50000`,
 		`"type":"in","category":"Gaji","account":"Jago","amount":20000`,
-		`"type":"transfer","category":"Transfer","account":"Jago","amount":99000`, // no destination: ignored
+		`"type":"transfer","category":"Transfer","account":"Jago","amount":99000`, // to someone else
+		`"type":"transfer","category":"Transfer","account":"BCA","to_account":" JAGO ","amount":30000`,
 		`"type":"out","category":"Jajan","account":"BCA","amount":7000`,
 	} {
 		call(t, srv, "POST", "/api/transactions", `{"occurred_at":"`+at+`","source":"manual","source_ref":"r`+strconv.Itoa(i)+`",`+b+`}`, nil)
@@ -411,12 +412,12 @@ func TestAssetFollowsTransactions(t *testing.T) {
 		call(t, srv, "GET", "/api/assets", "", &p)
 		return p.Assets[0].Balance
 	}
-	if b := bal(); b != 970000 {
+	if b := bal(); b != 901000 { // 1jt - 50rb + 20rb - 99rb + 30rb
 		t.Fatalf("live balance %v", b)
 	}
 	time.Sleep(time.Second)
 	call(t, srv, "PATCH", "/api/assets/"+strconv.FormatInt(x.ID, 10), `{"note":"x"}`, nil) // moves the anchor, keeps the flow
-	if b := bal(); b != 970000 {
+	if b := bal(); b != 901000 {
 		t.Fatalf("after patch %v", b)
 	}
 }

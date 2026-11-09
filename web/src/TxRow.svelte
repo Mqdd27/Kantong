@@ -9,7 +9,7 @@
   <span class="main">
     <span class="merchant">{tx.merchant || tx.category}</span>
     <span class="meta">
-      {tx.category} · {(showDate ? fmtShort : fmtTime).format(new Date(tx.occurred_at))}{tx.account ? ' · ' + tx.account : ''}
+      {tx.category} · {(showDate ? fmtShort : fmtTime).format(new Date(tx.occurred_at))}{tx.account ? ' · ' + tx.account : ''}{tx.to_account ? ' → ' + tx.to_account : ''}
       {#if tx.needs_review}<span class="badge">review</span>{/if}
     </span>
   </span>

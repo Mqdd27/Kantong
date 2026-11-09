@@ -22,6 +22,7 @@ type Tx struct {
 	Category    string   `json:"category"`
 	Merchant    string   `json:"merchant"`
 	Account     string   `json:"account"`
+	ToAccount   string   `json:"to_account"` // transfers only: destination account, '' = leaves your accounts
 	Note        string   `json:"note"`
 	Source      string   `json:"source"`
 	SourceRef   *string  `json:"source_ref"`
@@ -31,13 +32,13 @@ type Tx struct {
 	OrigAmount  *float64 `json:"orig_amount"` // amount in Currency when not IDR; Amount is then its IDR value
 }
 
-const txCols = `id, occurred_at, amount, type, category, merchant, account, note, source, source_ref, confidence, needs_review, currency, orig_amount`
+const txCols = `id, occurred_at, amount, type, category, merchant, account, to_account, note, source, source_ref, confidence, needs_review, currency, orig_amount`
 
 type scanner interface{ Scan(...any) error }
 
 func scanTx(s scanner) (Tx, error) {
 	var t Tx
-	err := s.Scan(&t.ID, &t.OccurredAt, &t.Amount, &t.Type, &t.Category, &t.Merchant, &t.Account,
+	err := s.Scan(&t.ID, &t.OccurredAt, &t.Amount, &t.Type, &t.Category, &t.Merchant, &t.Account, &t.ToAccount,
 		&t.Note, &t.Source, &t.SourceRef, &t.Confidence, &t.NeedsReview, &t.Currency, &t.OrigAmount)
 	return t, err
 }
@@ -146,6 +147,9 @@ func (a *app) checkTx(ctx context.Context, t *Tx) map[string]any {
 	}
 	t.OccurredAt = ts.In(wib).Format(time.RFC3339)
 	t.Merchant, t.Account, t.Note = strings.TrimSpace(t.Merchant), strings.TrimSpace(t.Account), strings.TrimSpace(t.Note)
+	if t.ToAccount = strings.TrimSpace(t.ToAccount); t.Type != "transfer" {
+		t.ToAccount = ""
+	}
 
 	var ok bool
 	if t.Currency, ok = normCurrency(t.Currency); !ok {
@@ -231,9 +235,9 @@ func (a *app) createTx(w http.ResponseWriter, r *http.Request) {
 // insertTx stores a validated t, sets its ID and notifies clients.
 func (a *app) insertTx(t *Tx) error {
 	res, err := a.db.Exec(`INSERT INTO transactions
-		(occurred_at, amount, type, category, merchant, account, note, source, source_ref, confidence, needs_review, currency, orig_amount)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		t.OccurredAt, t.Amount, t.Type, t.Category, t.Merchant, t.Account, t.Note, t.Source, t.SourceRef, t.Confidence, t.NeedsReview,
+		(occurred_at, amount, type, category, merchant, account, to_account, note, source, source_ref, confidence, needs_review, currency, orig_amount)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		t.OccurredAt, t.Amount, t.Type, t.Category, t.Merchant, t.Account, t.ToAccount, t.Note, t.Source, t.SourceRef, t.Confidence, t.NeedsReview,
 		t.Currency, t.OrigAmount)
 	if err != nil {
 		return err
@@ -288,6 +292,7 @@ func (a *app) patchTx(w http.ResponseWriter, r *http.Request) {
 		Category    *string  `json:"category"`
 		Merchant    *string  `json:"merchant"`
 		Account     *string  `json:"account"`
+		ToAccount   *string  `json:"to_account"`
 		Note        *string  `json:"note"`
 		NeedsReview *bool    `json:"needs_review"`
 		Currency    *string  `json:"currency"`
@@ -314,6 +319,7 @@ func (a *app) patchTx(w http.ResponseWriter, r *http.Request) {
 	set(&t.Category, p.Category)
 	set(&t.Merchant, p.Merchant)
 	set(&t.Account, p.Account)
+	set(&t.ToAccount, p.ToAccount)
 	set(&t.Note, p.Note)
 	set(&t.Currency, p.Currency)
 	if p.OrigAmount != nil {
@@ -334,9 +340,9 @@ func (a *app) patchTx(w http.ResponseWriter, r *http.Request) {
 		t.NeedsReview = *p.NeedsReview
 	}
 	_, err = a.db.Exec(`UPDATE transactions SET occurred_at = ?, amount = ?, type = ?, category = ?, merchant = ?,
-		account = ?, note = ?, needs_review = ?, currency = ?, orig_amount = ?,
+		account = ?, to_account = ?, note = ?, needs_review = ?, currency = ?, orig_amount = ?,
 		updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?`,
-		t.OccurredAt, t.Amount, t.Type, t.Category, t.Merchant, t.Account, t.Note, t.NeedsReview, t.Currency, t.OrigAmount, id)
+		t.OccurredAt, t.Amount, t.Type, t.Category, t.Merchant, t.Account, t.ToAccount, t.Note, t.NeedsReview, t.Currency, t.OrigAmount, id)
 	if err != nil {
 		a.fail(w, err)
 		return
