@@ -1,6 +1,7 @@
 <script>
   import { untrack } from 'svelte'
   import { s, load, connect } from './lib/store.svelte.js'
+  import Icon from './Icon.svelte'
   import Login from './Login.svelte'
   import Home from './Home.svelte'
   import TxList from './TxList.svelte'
@@ -19,33 +20,55 @@
   let sheet = $state(null)
   const open = (tx) => (sheet = { tx })
 
-  let wide = $state(matchMedia('(min-width: 900px)').matches)
-  matchMedia('(min-width: 900px)').addEventListener('change', (e) => (wide = e.matches))
   const reviewCount = $derived(s.txs.filter((t) => t.needs_review).length)
 
   $effect(() => {
     if (s.authed) untrack(() => { load(); connect() })
   })
 
-  const tabs = [
-    ['/', 'Beranda'],
-    ['/tx', 'Transaksi'],
-    ['/calendar', 'Kalender'], // mobile: toggle on Transaksi
-    ['/budget', 'Budget'],
-    ['/analytics', 'Analitik'],
-    ['/assets', 'Aset'],
-    ['/review', 'Review'], // mobile reaches it through the banner on Beranda/Transaksi
-    ['/rules', 'Aturan'], // mobile: link on Transaksi
+  // which tab lights up for routes that live under another one
+  const PARENT = { '/calendar': '/tx', '/review': '/tx', '/rules': '/tx', '/analytics': '/' }
+  const here = $derived(PARENT[route] ?? route)
+
+  // phone: four tabs around the add button; the rest is reached from these pages
+  const left = [['/', 'Beranda', 'home'], ['/tx', 'Transaksi', 'list']]
+  const right = [['/budget', 'Budget', 'pie'], ['/assets', 'Aset', 'wallet']]
+  // desktop sidebar: everything
+  const side = [
+    ['/', 'Beranda', 'home'],
+    ['/tx', 'Transaksi', 'list'],
+    ['/calendar', 'Kalender', 'calendar'],
+    ['/budget', 'Budget', 'pie'],
+    ['/analytics', 'Analitik', 'chart'],
+    ['/assets', 'Aset', 'wallet'],
   ]
+  const more = [['/review', 'Review', 'inbox'], ['/rules', 'Aturan kategori', 'tag']]
 </script>
 
 {#if !s.authed}
   <Login />
 {:else}
+  <aside>
+    <a class="brand" href="#/"><img src="/favicon.png" alt="" width="28" height="28" />Kantong</a>
+    <button class="primary new" onclick={() => (sheet = {})}><Icon name="plus" size={18} />Transaksi</button>
+    <nav aria-label="Menu utama">
+      {#each side as [href, label, icon]}
+        <a href={'#' + href} aria-current={route === href ? 'page' : undefined}><Icon name={icon} />{label}</a>
+      {/each}
+    </nav>
+    <p class="group">Lainnya</p>
+    <nav aria-label="Menu lainnya">
+      {#each more as [href, label, icon]}
+        <a href={'#' + href} aria-current={route === href ? 'page' : undefined}>
+          <Icon name={icon} />{label}
+          {#if href === '/review' && reviewCount}<span class="count">{reviewCount}</span>{/if}
+        </a>
+      {/each}
+      <a href="/api/export.xlsx" download><Icon name="download" />Export Excel</a>
+    </nav>
+  </aside>
+
   <main class:narrow={route === '/tx' || route === '/review' || route === '/rules' || route === '/calendar'}>
-    {#if reviewCount && (route === '/' || route === '/tx')}
-      <a class="banner" href="#/review">⚠︎ {reviewCount} transaksi perlu direview ›</a>
-    {/if}
     {#if route === '/tx'}
       <TxList {open} />
     {:else if route === '/review'}
@@ -65,19 +88,13 @@
     {/if}
   </main>
 
-  {#if route !== '/assets' && route !== '/analytics' && route !== '/rules'}
-    <button class="fab" aria-label="Tambah transaksi" onclick={() => (sheet = {})}>+</button>
-  {/if}
-
-  <nav>
-    <span class="brand">Kantong</span>
-    <button class="primary new" onclick={() => (sheet = {})}>+ Transaksi</button>
-    {#each tabs as [href, label]}
-      {@const active = route === href || (href === '/tx' && route === '/calendar' && !wide)}
-      <a href={'#' + href} aria-current={active ? 'page' : undefined} class:active class:desk={href === '/review' || href === '/rules' || href === '/calendar'}>
-        {label}
-        {#if href === '/review' && reviewCount}<span class="count">{reviewCount}</span>{/if}
-      </a>
+  <nav class="tabs" aria-label="Menu utama">
+    {#each left as [href, label, icon]}
+      <a href={'#' + href} aria-current={here === href ? 'page' : undefined}><Icon name={icon} size={22} /><span>{label}</span></a>
+    {/each}
+    <button class="add" aria-label="Tambah transaksi" onclick={() => (sheet = {})}><Icon name="plus" size={26} /></button>
+    {#each right as [href, label, icon]}
+      <a href={'#' + href} aria-current={here === href ? 'page' : undefined}><Icon name={icon} size={22} /><span>{label}</span></a>
     {/each}
   </nav>
 
@@ -90,115 +107,146 @@
 
 <style>
   main {
-    padding: calc(env(safe-area-inset-top) + 12px) 16px calc(env(safe-area-inset-bottom) + 96px);
+    padding: calc(env(safe-area-inset-top) + 12px) 16px calc(env(safe-area-inset-bottom) + 100px);
     max-width: 640px;
     margin: 0 auto;
   }
-  nav {
+
+  /* ---- phone tab bar ---- */
+  .tabs {
     position: fixed;
     inset: auto 0 0 0;
-    display: flex;
+    z-index: 5;
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    align-items: end;
+    padding: 6px 4px calc(env(safe-area-inset-bottom) + 6px);
     background: var(--surface);
     border-top: 1px solid var(--line);
-    padding-bottom: env(safe-area-inset-bottom);
   }
-  nav a {
-    flex: 1;
-    text-align: center;
-    padding: 14px 0;
+  .tabs a {
+    display: grid;
+    justify-items: center;
+    gap: 2px;
+    padding: 4px 0;
     color: var(--muted);
     text-decoration: none;
-    font-size: 14px;
+    font-size: 11px;
+    font-weight: 500;
   }
-  nav a.active {
-    color: var(--text);
-    font-weight: 600;
+  .tabs a[aria-current='page'] {
+    color: var(--accent);
+    font-weight: 650;
   }
-  .brand,
-  .new,
-  .desk {
+  .add {
+    justify-self: center;
+    display: grid;
+    place-items: center;
+    width: 54px;
+    height: 54px;
+    margin-top: -22px;
+    padding: 0;
+    border: 4px solid var(--bg);
+    border-radius: 50%;
+    background: var(--accent);
+    color: var(--on-accent);
+    box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 40%, transparent);
+  }
+
+  /* ---- desktop sidebar ---- */
+  aside {
     display: none;
   }
   @media (min-width: 900px) {
-    main {
-      max-width: 1200px;
-      margin-left: 220px;
-      padding: 32px 40px;
+    .tabs {
+      display: none;
     }
-    main.narrow {
-      max-width: 800px;
-    }
-    nav {
+    aside {
+      position: fixed;
       inset: 0 auto 0 0;
-      width: 220px;
+      width: 240px;
+      display: flex;
       flex-direction: column;
       gap: 2px;
-      padding: 24px 12px;
-      border-top: 0;
+      padding: 20px 14px;
+      background: var(--surface);
       border-right: 1px solid var(--line);
+      overflow-y: auto;
     }
-    nav a,
-    nav a.desk {
-      display: block;
-      flex: none;
-      text-align: left;
-      padding: 10px 12px;
-      border-radius: 8px;
-      font-size: 15px;
+    main {
+      max-width: 1180px;
+      margin-left: 240px;
+      padding: 28px 40px 48px;
     }
-    nav a.active {
-      background: var(--bg);
-    }
-    .brand {
-      display: block;
-      font-weight: 700;
-      font-size: 18px;
-      padding: 0 12px 16px;
-    }
-    .new {
-      display: block;
-      margin-bottom: 16px;
-    }
-    .fab {
-      display: none;
+    main.narrow {
+      max-width: 820px;
     }
     .toast {
       left: auto;
       width: 360px;
     }
   }
-  .banner {
-    display: block;
-    background: var(--surface);
-    border: 1px solid var(--warn);
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 10px 18px;
     color: var(--text);
-    border-radius: 10px;
-    padding: 10px 14px;
-    margin-bottom: 12px;
+    font-size: 19px;
+    font-weight: 700;
     text-decoration: none;
-    font-size: 14px;
+  }
+  .brand img {
+    border-radius: 8px;
+  }
+  .new {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    margin-bottom: 16px;
+  }
+  aside nav {
+    display: grid;
+    gap: 2px;
+  }
+  aside nav a {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 9px 10px;
+    border-radius: 10px;
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 15px;
+    font-weight: 500;
+  }
+  aside nav a:hover {
+    color: var(--text);
+    background: var(--bg);
+  }
+  aside nav a[aria-current='page'] {
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+    font-weight: 650;
+  }
+  .group {
+    margin: 18px 10px 4px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 600;
   }
   .count {
+    margin-left: auto;
+    min-width: 20px;
+    padding: 1px 6px;
+    border-radius: 999px;
     background: var(--warn);
     color: var(--on-warn);
-    border-radius: 999px;
-    padding: 0 6px;
-    font-size: 11px;
-    margin-left: 4px;
+    font-size: 12px;
+    text-align: center;
   }
-  .fab {
-    position: fixed;
-    right: 16px;
-    bottom: calc(env(safe-area-inset-bottom) + 68px);
-    width: 56px;
-    height: 56px;
-    border-radius: 50%;
-    border: 0;
-    background: var(--accent);
-    color: var(--on-accent);
-    font-size: 28px;
-    box-shadow: 0 4px 12px rgb(0 0 0 / 0.25);
-  }
+
   .toast {
     position: fixed;
     left: 16px;
@@ -207,7 +255,7 @@
     background: var(--out);
     color: var(--on-out);
     padding: 12px 14px;
-    border-radius: 10px;
+    border-radius: 12px;
     z-index: 10;
     animation: toast-in var(--t-sheet) var(--ease-out);
   }

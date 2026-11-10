@@ -1,6 +1,9 @@
 <script>
   import { s, fmtIDR, fmtNum, fmtCur, setBudget, act, freqLabel } from './lib/store.svelte.js'
+  import PageHead from './PageHead.svelte'
   import MonthBar from './MonthBar.svelte'
+  import Icon from './Icon.svelte'
+  import { catLook } from './lib/look.js'
   import BudgetCard from './BudgetCard.svelte'
   import RecurringSheet from './RecurringSheet.svelte'
 
@@ -52,105 +55,119 @@
   })
 </script>
 
+<PageHead title="Budget" />
 <MonthBar />
 
 <div class="cols">
-  <div>
+  <div class="stack">
     <BudgetCard />
 
-    <div class="head">
-      <h3>Per kategori</h3>
+    <div class="sec">
+      <h2>Per kategori</h2>
       {#if editing}
-        <div class="btns">
+        <span class="btns">
           <button onclick={() => (editing = false)}>Batal</button>
           <button class="primary" onclick={saveAll}>Simpan</button>
-        </div>
+        </span>
       {:else}
         <button onclick={startEdit}>Atur budget</button>
       {/if}
     </div>
 
     {#if editing}
-      <p class="hint">Berlaku mulai bulan ini dan seterusnya sampai diubah. Kosongkan untuk menghapus.</p>
-      <label class="edit overall">
-        <span>Total bulanan</span>
-        <input inputmode="numeric" placeholder="0" value={draft['']} oninput={(e) => fmtInput(e, '')} />
-      </label>
-      {#if num(draft['']) && catTotal > num(draft[''])}
-        <p class="hint warn">⚠︎ Jumlah budget kategori ({fmtIDR.format(catTotal)}) lebih besar dari total.</p>
-      {/if}
-      {#each rows as r (r.category)}
-        <label class="edit">
-          <span>{r.category}{r.in_budget ? '' : ' (di luar total)'}</span>
-          <input inputmode="numeric" placeholder="tanpa batas" value={draft[r.category]} oninput={(e) => fmtInput(e, r.category)} />
+      <section class="card">
+        <p class="hint">Berlaku mulai bulan ini dan seterusnya sampai diubah. Kosongkan untuk menghapus.</p>
+        <label class="edit overall">
+          <span>Total bulanan</span>
+          <input inputmode="numeric" placeholder="0" value={draft['']} oninput={(e) => fmtInput(e, '')} />
         </label>
-      {/each}
-    {:else}
-      <ul class="cats">
-        {#each rows.filter((r) => r.limit || r.spent) as r (r.category)}
-          {@const p = r.limit ? (r.spent / r.limit) * 100 : 0}
-          <li>
-            <div class="line">
-              <span>{r.category}{r.in_budget ? '' : ' ·  di luar total'}</span>
-              <span class="amt">
-                {fmtIDR.format(r.spent)}{#if r.limit}<span class="muted"> / {fmtIDR.format(r.limit)}</span>{/if}
-              </span>
-            </div>
-            {#if r.limit}
-              <div class="bar"><span class="grow" class:warn={p >= 90 && p <= 100} class:over={p > 100} style:width="{Math.min(p, 100)}%"></span></div>
-              <div class="sub">
-                {#if p > 100}<span class="overtxt">✕ lewat {fmtIDR.format(r.spent - r.limit)}</span>
-                {:else}sisa {fmtIDR.format(r.limit - r.spent)}{/if}
-              </div>
-            {/if}
-          </li>
-        {:else}
-          <li class="muted">Belum ada pengeluaran bulan ini.</li>
+        {#if num(draft['']) && catTotal > num(draft[''])}
+          <p class="hint warn"><Icon name="alert" size={16} />Jumlah budget kategori ({fmtIDR.format(catTotal)}) lebih besar dari total.</p>
+        {/if}
+        {#each rows as r (r.category)}
+          {@const look = catLook(r.category)}
+          <label class="edit">
+            <span class="name"><span class="avatar sm" style:--hue={look.hue}><Icon name={look.icon} size={18} /></span>{r.category}{r.in_budget ? '' : ' (di luar total)'}</span>
+            <input inputmode="numeric" placeholder="tanpa batas" value={draft[r.category]} oninput={(e) => fmtInput(e, r.category)} />
+          </label>
         {/each}
-      </ul>
+      </section>
+    {:else}
+      <section class="card">
+        <ul class="cats">
+          {#each rows.filter((r) => r.limit || r.spent) as r (r.category)}
+            {@const p = r.limit ? (r.spent / r.limit) * 100 : 0}
+            {@const look = catLook(r.category)}
+            <li>
+              <span class="avatar" style:--hue={look.hue}><Icon name={look.icon} /></span>
+              <div class="what">
+                <div class="line">
+                  <span class="cat">{r.category}{#if !r.in_budget}<small> · di luar total</small>{/if}</span>
+                  <span class="num amt">{fmtIDR.format(r.spent)}{#if r.limit}<span class="muted"> / {fmtIDR.format(r.limit)}</span>{/if}</span>
+                </div>
+                {#if r.limit}
+                  <div class="bar"><span class="grow" class:warn={p >= 90 && p <= 100} class:over={p > 100} style:width="{Math.min(p, 100)}%"></span></div>
+                  <div class="sub">
+                    {#if p > 100}<span class="overtxt">Lewat {fmtIDR.format(r.spent - r.limit)}</span>
+                    {:else}Sisa {fmtIDR.format(r.limit - r.spent)}{/if}
+                  </div>
+                {/if}
+              </div>
+            </li>
+          {:else}
+            <li class="empty">Belum ada pengeluaran bulan ini.</li>
+          {/each}
+        </ul>
+      </section>
     {/if}
   </div>
 
-  <div>
-    <div class="head">
-      <h3>Akan datang bulan ini</h3>
-    </div>
-    {#each upcoming as u (u.recurring_id)}
-      {@const due = u.date <= today}
-      <div class="up">
-        <span class="main">
-          <span>{u.merchant || u.category}</span>
-          <span class="muted">{dshort(u.date)}{due ? ' · jatuh tempo' : ''}{u.more ? ` · +${u.more}× lagi, total ${fmtIDR.format(u.total)}` : ''}{u.auto ? ' · otomatis' : ''}</span>
-        </span>
-        <span class="amt" class:in={u.type === 'in'}>{u.type === 'in' ? '+' : ''}{fmtIDR.format(u.amount)}</span>
-        {#if due && !u.auto && s.recurring.find((r) => r.id === u.recurring_id)?.next_date === u.date}
-          <span class="btns">
-            <button class="primary sm" onclick={() => act(`/recurring/${u.recurring_id}/advance`, 'POST')}>Catat</button>
-            <button class="sm" onclick={() => act(`/recurring/${u.recurring_id}/advance?skip=1`, 'POST')}>Lewati</button>
+  <div class="stack">
+    <div class="sec"><h2>Akan datang bulan ini</h2></div>
+    <section class="card list">
+      {#each upcoming as u (u.recurring_id)}
+        {@const due = u.date <= today}
+        {@const look = catLook(u.category)}
+        <div class="item">
+          <span class="avatar" style:--hue={look.hue}><Icon name={look.icon} /></span>
+          <span class="main">
+            <span class="title">{u.merchant || u.category}</span>
+            <span class="meta">{dshort(u.date)}{due ? ' · jatuh tempo' : ''}{u.more ? ` · +${u.more}× lagi, total ${fmtIDR.format(u.total)}` : ''}{u.auto ? ' · otomatis' : ''}</span>
           </span>
-        {/if}
-      </div>
-    {:else}
-      <p class="muted">Nggak ada tagihan lagi bulan ini.</p>
-    {/each}
+          <span class="num amt" class:pos={u.type === 'in'}>{u.type === 'in' ? '+' : ''}{fmtIDR.format(u.amount)}</span>
+          {#if due && !u.auto && s.recurring.find((r) => r.id === u.recurring_id)?.next_date === u.date}
+            <span class="btns due">
+              <button class="primary sm" onclick={() => act(`/recurring/${u.recurring_id}/advance`, 'POST')}>Catat</button>
+              <button class="sm" onclick={() => act(`/recurring/${u.recurring_id}/advance?skip=1`, 'POST')}>Lewati</button>
+            </span>
+          {/if}
+        </div>
+      {:else}
+        <p class="empty">Nggak ada tagihan lagi bulan ini.</p>
+      {/each}
+    </section>
 
-    <div class="head">
-      <h3>Transaksi berulang</h3>
-      <button onclick={() => (sheet = {})}>+ Tambah</button>
+    <div class="sec">
+      <h2>Transaksi berulang</h2>
+      <button onclick={() => (sheet = {})}><Icon name="plus" size={16} />Tambah</button>
     </div>
-    {#each s.recurring as r (r.id)}
-      <button class="rec" onclick={() => (sheet = { rec: r })}>
-        <span class="main">
-          <span>{r.merchant || r.category}</span>
-          <span class="muted">{r.category} · {freqLabel(r)} · berikutnya {dshort(r.next_date)}{r.auto ? ' · otomatis' : ''}</span>
-        </span>
-        <span class="amt" class:in={r.type === 'in'}>
-          {r.currency !== 'IDR' ? fmtCur(r.orig_amount, r.currency) : fmtIDR.format(r.amount)}
-        </span>
-      </button>
-    {:else}
-      <p class="muted">Tambahkan gaji, langganan (Claude, internet), cicilan, dll. Tagihan yang akan datang ikut mengurangi sisa budget.</p>
-    {/each}
+    <section class="card list">
+      {#each s.recurring as r (r.id)}
+        {@const look = catLook(r.category)}
+        <button class="item rec" onclick={() => (sheet = { rec: r })}>
+          <span class="avatar" style:--hue={look.hue}><Icon name={look.icon} /></span>
+          <span class="main">
+            <span class="title">{r.merchant || r.category}</span>
+            <span class="meta">{r.category} · {freqLabel(r)} · berikutnya {dshort(r.next_date)}{r.auto ? ' · otomatis' : ''}</span>
+          </span>
+          <span class="num amt" class:pos={r.type === 'in'}>
+            {r.currency !== 'IDR' ? fmtCur(r.orig_amount, r.currency) : fmtIDR.format(r.amount)}
+          </span>
+        </button>
+      {:else}
+        <p class="empty">Tambahkan gaji, langganan (Claude, internet), cicilan, dll. Tagihan yang akan datang ikut mengurangi sisa budget.</p>
+      {/each}
+    </section>
   </div>
 </div>
 
@@ -161,48 +178,26 @@
 <style>
   .cols {
     display: grid;
-    gap: 8px;
+    gap: 12px;
   }
   @media (min-width: 900px) {
     .cols {
-      grid-template-columns: 1fr 1fr;
-      gap: 40px;
-      align-items: start;
+      gap: 24px;
     }
   }
-  .head {
+  .sec button {
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    margin: 24px 0 8px;
-    gap: 8px;
-  }
-  .cols > div > .head:first-child {
-    margin-top: 0;
-  }
-  @media (max-width: 899px) {
-    .cols > div > .head:first-child {
-      margin-top: 24px;
-    }
-  }
-  h3 {
-    font-size: 14px;
-    color: var(--muted);
-    margin: 0;
-  }
-  .head button {
-    padding: 6px 12px;
-    font-size: 14px;
+    gap: 4px;
   }
   .btns {
     display: flex;
     gap: 6px;
   }
-  .muted {
-    color: var(--muted);
-    font-size: 13px;
-  }
   .hint {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     color: var(--muted);
     font-size: 13px;
     margin: 0 0 8px;
@@ -212,11 +207,17 @@
   }
   .edit {
     display: grid;
-    grid-template-columns: 1fr 160px;
+    grid-template-columns: 1fr 150px;
     align-items: center;
     gap: 12px;
     padding: 6px 0;
     font-size: 14px;
+  }
+  .name {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
   }
   .edit.overall {
     font-weight: 600;
@@ -233,7 +234,16 @@
     padding: 0;
     margin: 0;
     display: grid;
-    gap: 14px;
+    gap: 16px;
+  }
+  .cats li {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .what {
+    flex: 1;
+    min-width: 0;
   }
   .line {
     display: flex;
@@ -241,24 +251,30 @@
     gap: 8px;
     font-size: 14px;
   }
-  .amt {
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
+  .cat {
+    font-weight: 600;
   }
-  .in {
-    color: var(--in);
+  .cat small {
+    color: var(--muted);
+    font-weight: 400;
+  }
+  .amt {
+    font-weight: 600;
+  }
+  .amt .muted {
+    font-weight: 400;
   }
   .bar {
-    height: 8px;
-    border-radius: 4px;
-    background: var(--surface);
-    margin: 6px 0 2px;
+    height: 6px;
+    border-radius: 3px;
+    background: var(--bg);
+    margin: 7px 0 3px;
     overflow: hidden;
   }
   .bar span {
     display: block;
     height: 100%;
-    border-radius: 4px;
+    border-radius: 3px;
     background: var(--accent);
   }
   .bar .warn {
@@ -275,12 +291,11 @@
     color: var(--out);
     font-weight: 600;
   }
-  .up,
-  .rec {
+  .item {
     display: flex;
     flex-wrap: wrap;
     width: 100%;
-    gap: 6px 12px;
+    gap: 8px 12px;
     align-items: center;
     padding: 12px 0;
     border: 0;
@@ -291,18 +306,32 @@
     text-align: left;
     font: inherit;
   }
+  .item:last-child {
+    border-bottom: 0;
+  }
   .main {
     flex: 1;
     min-width: 0;
     display: grid;
     gap: 2px;
   }
+  .title {
+    font-weight: 600;
+  }
+  .meta {
+    color: var(--muted);
+    font-size: 13px;
+  }
+  .due {
+    width: 100%;
+    padding-left: 52px;
+  }
   .sm {
-    padding: 4px 10px;
+    padding: 6px 14px;
     font-size: 13px;
   }
   .rec:active {
     scale: none;
-    background: color-mix(in srgb, var(--text) 6%, transparent);
+    background: color-mix(in srgb, var(--text) 5%, transparent);
   }
 </style>

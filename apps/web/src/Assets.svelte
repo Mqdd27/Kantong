@@ -2,8 +2,11 @@
   import { onMount } from 'svelte'
   import PerfChart from './PerfChart.svelte'
   import TxRow from './TxRow.svelte'
+  import PageHead from './PageHead.svelte'
+  import Icon from './Icon.svelte'
+  import { kindLook } from './lib/look.js'
   import { api } from './lib/api.js'
-  import { s, fmtIDR, fmtCur, fmtShort, loadAssets, CURRENCIES, saveAsset, deleteAsset, view, toggleHide } from './lib/store.svelte.js'
+  import { s, fmtIDR, fmtCur, fmtShort, loadAssets, CURRENCIES, saveAsset, deleteAsset } from './lib/store.svelte.js'
 
   const KINDS = {
     bank: 'Bank', ewallet: 'E-wallet', forex: 'Valas', cash: 'Tunai', stock: 'Saham', bond: 'Obligasi',
@@ -113,21 +116,21 @@
   }
 </script>
 
+<PageHead title="Aset">
+  <button class="icon" aria-label="Tambah aset" title="Tambah aset" onclick={() => openEdit()}><Icon name="plus" /></button>
+</PageHead>
+
 <div class="top">
-<section class="hero">
-  <span class="head">Total aset
-    <button class="eye" aria-label={view.hide ? 'Tampilkan nominal' : 'Sembunyikan nominal'} aria-pressed={view.hide} onclick={toggleHide}>
-      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" /><circle cx="12" cy="12" r="3" />{#if view.hide}<path d="M3 3l18 18" />{/if}</svg>
-    </button>
-  </span>
-  <b>{fmtIDR.format(s.portfolio.total_idr)}</b>
+<section class="card hero">
+  <span class="head">Total aset</span>
+  <b class="num">{fmtIDR.format(s.portfolio.total_idr)}</b>
   {#if s.portfolio.total_idr > 0}
     <ul class="alloc" aria-label="Alokasi per jenis">
       {#each groups.filter((g) => g.total > 0) as g}
         {@const pct = (g.total / s.portfolio.total_idr) * 100}
         <li>
           <span>{KINDS[g.kind]}</span>
-          <span class="bar"><span style:width="{pct}%"></span></span>
+          <span class="bar"><span class="grow" style:width="{pct}%" style:background={kindLook(g.kind).hue}></span></span>
           <span class="pct">{pct.toFixed(1)}%</span>
         </li>
       {/each}
@@ -142,24 +145,29 @@
 </div>
 
 {#if s.portfolio.pending_orders.length}
-  <h3>Order menunggu konfirmasi</h3>
+  <div class="sec"><h2>Order menunggu konfirmasi</h2></div>
+  <section class="card list pending">
   {#each s.portfolio.pending_orders as o}
     <div class="row">
-      <span class="main"><span>{o.side === 'buy' ? 'Beli' : 'Jual'} {o.asset}</span>
+      <span class="avatar" style:--hue="var(--warn)"><Icon name={o.side === 'buy' ? 'down' : 'up'} /></span>
+      <span class="main"><span class="name">{o.side === 'buy' ? 'Beli' : 'Jual'} {o.asset}</span>
         <span class="meta">{o.order_ref} · {fmtShort.format(new Date(o.occurred_at))}</span></span>
-      <span>{fmtIDR.format(o.amount)}</span>
+      <span class="num">{fmtIDR.format(o.amount)}</span>
     </div>
   {/each}
+  </section>
 {/if}
 
 <div class="groups">
 {#each groups as g}
-  <div class="group">
-  <h3><span>{KINDS[g.kind]}</span><span>{fmtIDR.format(g.total)}</span></h3>
+  {@const look = kindLook(g.kind)}
+  <section class="card list group">
+  <h3><span>{KINDS[g.kind]}</span><span class="num">{fmtIDR.format(g.total)}</span></h3>
   {#each g.items as a}
     <button class="row" onclick={() => openEdit(a)}>
+      <span class="avatar" style:--hue={look.hue}><Icon name={look.icon} /></span>
       <span class="main">
-        <span>{a.name}</span>
+        <span class="name">{a.name}</span>
         <span class="meta">
           {#if a.currency !== 'IDR'}{fmtCur(a.balance, a.currency)} · 1 {a.currency === 'XAU' ? 'gram' : a.currency} = {fmtIDR.format(a.rate)}{/if}
           {#if a.invested}{a.currency !== 'IDR' ? ' · ' : ''}modal {fmtCur(a.invested, a.currency === 'XAU' ? 'IDR' : a.currency)}{/if}
@@ -170,7 +178,7 @@
           <span class="goal">
             <span class="gbar"><span style:width="{Math.min(100, g.pct)}%"></span></span>
             <span class="meta">
-              {g.pct >= 100 ? '✓ Target tercapai' : `${Math.floor(g.pct)}% dari ${fmtCur(a.target, a.currency)}`}{#if g.perMonth}
+              {g.pct >= 100 ? 'Target tercapai' : `${Math.floor(g.pct)}% dari ${fmtCur(a.target, a.currency)}`}{#if g.perMonth}
                 · perlu {fmtCur(g.perMonth, a.currency)}/bln sampai {g.by}{/if}
             </span>
           </span>
@@ -185,13 +193,13 @@
       </span>
     </button>
   {/each}
-  </div>
+  </section>
 {:else}
-  <p class="empty">Belum ada aset. Tambah rekening, valas, saham (total nilai), obligasi, SBN, dll.</p>
+  <p class="card empty">Belum ada aset. Tambah rekening, valas, saham (total nilai), obligasi, SBN, dll.</p>
 {/each}
 </div>
 
-<button class="add" onclick={() => openEdit()}>+ Tambah aset</button>
+<button class="add" onclick={() => openEdit()}><Icon name="plus" size={18} />Tambah aset</button>
 
 {#if edit}
   <dialog class="sheet" bind:this={dialog} onclose={() => (edit = null)} onclick={(e) => e.target === dialog && dialog.close()}>
@@ -302,23 +310,27 @@
 <style>
   .top {
     display: grid;
-    gap: 8px;
+    gap: 12px;
+    margin-bottom: 12px;
   }
   .top > :global(*) {
     min-width: 0; /* let the chart shrink with the column */
   }
   .groups {
     display: grid;
-    gap: 0 32px;
+    gap: 12px;
+    margin-top: 12px;
   }
   @media (min-width: 900px) {
     .top {
-      grid-template-columns: minmax(240px, 1fr) 2.4fr;
-      gap: 16px;
+      grid-template-columns: minmax(260px, 1fr) 2.2fr;
+      gap: 24px;
       align-items: start;
     }
     .groups {
       grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+      gap: 24px;
+      align-items: start;
     }
     .add {
       max-width: 340px;
@@ -327,30 +339,15 @@
   .hero {
     display: grid;
     gap: 4px;
-    padding: 16px;
-    background: var(--surface);
-    border-radius: 14px;
-    margin-bottom: 8px;
   }
-  .hero > span {
+  .head {
     color: var(--muted);
     font-size: 13px;
   }
-  .head {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-  .eye {
-    background: none;
-    border: 0;
-    padding: 0;
-    color: var(--muted);
-    display: grid;
-  }
   .hero b {
-    font-size: 28px;
-    font-variant-numeric: tabular-nums;
+    font-size: 30px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
   }
   .alloc {
     list-style: none;
@@ -376,7 +373,6 @@
     display: block;
     height: 100%;
     border-radius: 3px;
-    background: var(--series-1);
   }
   .alloc .pct {
     text-align: right;
@@ -399,7 +395,7 @@
   .gbar {
     height: 6px;
     border-radius: 3px;
-    background: var(--surface);
+    background: var(--bg);
     overflow: hidden;
     max-width: 240px;
   }
@@ -415,9 +411,25 @@
   h3 {
     display: flex;
     justify-content: space-between;
-    font-size: 14px;
+    gap: 8px;
+    margin: 0;
+    padding: 12px 0 8px;
+    border-bottom: 1px solid var(--line);
+    font-size: 13px;
+    font-weight: 600;
     color: var(--muted);
-    margin: 20px 0 4px;
+  }
+  h3 .num {
+    color: var(--text);
+  }
+  .pending {
+    margin-bottom: 4px;
+  }
+  .name {
+    font-weight: 600;
+  }
+  .row:last-child {
+    border-bottom: 0;
   }
   .row {
     display: flex;
@@ -428,6 +440,7 @@
     background: none;
     border: 0;
     border-bottom: 1px solid var(--line);
+    border-radius: 0;
     color: inherit;
     text-align: left;
     font: inherit;
@@ -444,12 +457,14 @@
   }
   .val {
     display: grid;
+    font-weight: 650;
     justify-items: end;
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
   }
   small {
     font-size: 12px;
+    font-weight: 500;
   }
   .in {
     color: var(--in);
@@ -457,19 +472,19 @@
   .out {
     color: var(--out);
   }
-  .empty {
-    color: var(--muted);
-    text-align: center;
-    padding: 24px 0;
-  }
   .add {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
     width: 100%;
-    margin-top: 16px;
+    margin-top: 12px;
     padding: 12px;
-    border: 1px dashed var(--line);
-    border-radius: 10px;
+    border: 1px dashed var(--field);
+    border-radius: var(--radius);
     background: none;
-    color: var(--text);
+    color: var(--accent);
+    font-weight: 600;
   }
   .tabs {
     padding: 16px 16px 0;

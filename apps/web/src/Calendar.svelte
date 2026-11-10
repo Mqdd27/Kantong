@@ -1,5 +1,6 @@
 <script>
   import { s, fmtIDR, fmtDay, mask } from './lib/store.svelte.js'
+  import PageHead from './PageHead.svelte'
   import MonthBar from './MonthBar.svelte'
   import ViewToggle from './ViewToggle.svelte'
   import TxRow from './TxRow.svelte'
@@ -40,15 +41,17 @@
   const sel = $derived(days.find((d) => d.date === picked) ?? days.find((d) => d.date === today) ?? null)
 </script>
 
+<PageHead title="Kalender" />
 <ViewToggle active="calendar" />
 <MonthBar />
 
-<section class="tiles">
+<section class="card tiles">
   <div><span>Keluar</span><b>{fmtIDR.format(spent)}</b></div>
   <div><span>Rata-rata / hari</span><b>{fmtIDR.format(past.length ? spent / past.length : 0)}</b></div>
   <div><span>Tanpa belanja</span><b>{noSpend} / {past.length}</b></div>
 </section>
 
+<section class="card">
 <div class="grid">
   {#each WEEK as w}<span class="wd">{w}</span>{/each}
   {#each { length: lead } as _}<span></span>{/each}
@@ -70,8 +73,10 @@
   {/each}
 </div>
 <p class="legend"><span class="sw"></span>makin gelap = makin besar pengeluaran · <i class="inc"></i> ada pemasukan · ~ tagihan berulang · Investasi nggak dihitung</p>
+</section>
 
 {#if sel}
+  <section class="card list day-list">
   <h3>
     <span>{fmtDay.format(new Date(sel.date + 'T12:00:00+07:00'))}</span>
     <span class="tot">{sel.out ? '−' + fmtIDR.format(sel.out) : ''}{sel.in ? ' +' + fmtIDR.format(sel.in) : ''}</span>
@@ -79,21 +84,21 @@
   {#each sel.txs as tx (tx.id)}
     <TxRow {tx} onclick={() => open(tx)} />
   {:else}
-    <p class="muted">{sel.up ? `Tagihan berulang ${fmtIDR.format(sel.up)} dijadwalkan.` : 'Nggak ada transaksi.'}</p>
+    <p class="empty">{sel.up ? `Tagihan berulang ${fmtIDR.format(sel.up)} dijadwalkan.` : 'Nggak ada transaksi.'}</p>
   {/each}
+  </section>
 {/if}
 
 <style>
+  .card {
+    margin-bottom: 12px;
+  }
   .tiles {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: 8px;
-    margin-bottom: 12px;
   }
   .tiles div {
-    background: var(--surface);
-    border-radius: 12px;
-    padding: 10px 12px;
     display: grid;
     gap: 2px;
     min-width: 0;
@@ -103,7 +108,7 @@
     font-size: 12px;
   }
   .tiles b {
-    font-size: 13px;
+    font-size: 14px;
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
   }
@@ -131,8 +136,8 @@
     min-height: 58px;
     padding: 5px 3px 5px 5px;
     border: 1px solid transparent;
-    border-radius: 8px;
-    background: color-mix(in srgb, var(--out) var(--heat), var(--surface));
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--out) var(--heat), var(--bg));
     color: var(--text);
     display: flex;
     flex-direction: column;
@@ -156,7 +161,8 @@
     font-weight: 700;
   }
   .sel {
-    border-color: var(--text);
+    border-color: var(--accent);
+    box-shadow: inset 0 0 0 1px var(--accent);
   }
   .n {
     font-size: 12px;
@@ -199,17 +205,16 @@
     display: flex;
     justify-content: space-between;
     gap: 8px;
-    font-size: 14px;
+    margin: 0;
+    padding: 12px 0 8px;
+    border-bottom: 1px solid var(--line);
+    font-size: 13px;
+    font-weight: 600;
     color: var(--muted);
-    margin: 20px 0 4px;
   }
   .tot {
     font-variant-numeric: tabular-nums;
     color: var(--text);
-  }
-  .muted {
-    color: var(--muted);
-    font-size: 14px;
   }
   @media (min-width: 900px) {
     .day {

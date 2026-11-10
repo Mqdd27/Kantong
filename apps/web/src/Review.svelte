@@ -1,6 +1,9 @@
 <script>
   import { s, fmtIDR, fmtShort, updateTx, addRule } from './lib/store.svelte.js'
+  import PageHead from './PageHead.svelte'
   import MonthBar from './MonthBar.svelte'
+  import Icon from './Icon.svelte'
+  import { catLook } from './lib/look.js'
 
   let { open } = $props()
   const pending = $derived(s.txs.filter((t) => t.needs_review))
@@ -15,6 +18,7 @@
   }
 </script>
 
+<PageHead title="Review" />
 <MonthBar />
 
 {#if pending.length}
@@ -23,11 +27,15 @@
 {/if}
 
 {#each pending as tx (tx.id)}
-  <article>
+  {@const look = catLook(tx.category)}
+  <article class="card">
     <button class="head" onclick={() => open(tx)}>
-      <b>{tx.merchant || '—'}</b>
-      <span>{fmtIDR.format(tx.amount)} · {fmtShort.format(new Date(tx.occurred_at))}</span>
-      <span class="guess">Tebakan: {tx.category}</span>
+      <span class="avatar" style:--hue={look.hue}><Icon name={look.icon} /></span>
+      <span class="main">
+        <b>{tx.merchant || '—'}</b>
+        <span>{fmtShort.format(new Date(tx.occurred_at))} · Tebakan: {tx.category}</span>
+      </span>
+      <b class="num">{fmtIDR.format(tx.amount)}</b>
     </button>
     <div class="chips">
       {#each s.categories.filter((c) => c.type === tx.type) as c}
@@ -38,7 +46,7 @@
     </div>
   </article>
 {:else}
-  <p class="empty">Nggak ada yang perlu direview.</p>
+  <section class="card"><p class="empty">Nggak ada yang perlu direview.</p></section>
 {/each}
 
 <style>
@@ -60,14 +68,12 @@
     margin: 0;
   }
   article {
-    background: var(--surface);
-    border-radius: 12px;
-    padding: 12px;
     margin-bottom: 12px;
   }
   .head {
-    display: grid;
-    gap: 2px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
     width: 100%;
     background: none;
     border: 0;
@@ -76,15 +82,24 @@
     font: inherit;
     padding: 0;
   }
-  .head span {
+  .main {
+    flex: 1;
+    min-width: 0;
+    display: grid;
+    gap: 2px;
+  }
+  .main span {
     color: var(--muted);
     font-size: 13px;
+  }
+  .head:active {
+    scale: none;
   }
   .chips {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
-    margin-top: 10px;
+    margin-top: 12px;
   }
   .chips button {
     border: 1px solid var(--line);
@@ -96,8 +111,8 @@
   }
   .chips .current {
     border-color: var(--accent);
-  }
-  .empty {
-    color: var(--muted);
+    background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+    color: var(--accent);
+    font-weight: 600;
   }
 </style>

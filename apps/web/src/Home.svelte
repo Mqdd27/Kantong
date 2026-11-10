@@ -1,10 +1,19 @@
 <script>
-  import { s, fmtIDR } from './lib/store.svelte.js'
+  import { onMount } from 'svelte'
+  import { s, fmtIDR, loadAssets } from './lib/store.svelte.js'
+  import { catLook } from './lib/look.js'
+  import PageHead from './PageHead.svelte'
   import MonthBar from './MonthBar.svelte'
+  import ReviewAlert from './ReviewAlert.svelte'
   import TxRow from './TxRow.svelte'
   import BudgetCard from './BudgetCard.svelte'
+  import Icon from './Icon.svelte'
 
   let { open } = $props()
+
+  onMount(() => {
+    if (!s.portfolio.assets.length) loadAssets() // net worth tile
+  })
 
   const total = (type) => s.txs.reduce((n, t) => (t.type === type ? n + t.amount : n), 0)
   const inSum = $derived(total('in'))
@@ -15,131 +24,176 @@
     return [...m].sort((a, b) => b[1] - a[1])
   })
   const max = $derived(byCat[0]?.[1] || 1)
+  // savings rate as Analitik counts it: Investasi is saving, not spending
+  const spend = $derived(outSum - (byCat.find(([c]) => c === 'Investasi')?.[1] ?? 0))
+  const rate = $derived(inSum ? Math.round(((inSum - spend) / inSum) * 100) : null)
 </script>
 
+<PageHead title="Beranda" />
 <MonthBar />
 
 <div class="cols">
-<div>
-<section class="totals">
-  <div><span>Masuk</span><b class="in">{fmtIDR.format(inSum)}</b></div>
-  <div><span>Keluar</span><b>{fmtIDR.format(outSum)}</b></div>
-  <div><span>Selisih</span><b class:in={inSum >= outSum}>{fmtIDR.format(inSum - outSum)}</b></div>
-</section>
+  <div class="stack">
+    <section class="balance">
+      <BudgetCard compact hero />
+      <div class="flow">
+        <div><span>Masuk</span><b class="num">{fmtIDR.format(inSum)}</b></div>
+        <div><span>Keluar</span><b class="num">{fmtIDR.format(outSum)}</b></div>
+        <div><span>Selisih</span><b class="num">{fmtIDR.format(inSum - outSum)}</b></div>
+      </div>
+    </section>
 
-<div class="gap"><BudgetCard compact /></div>
+    <ReviewAlert />
 
-{#if byCat.length}
-  <h3>Pengeluaran per kategori</h3>
-  <ul class="bars">
-    {#each byCat as [cat, amt]}
-      <li>
-        <span class="label">{cat}</span>
-        <span class="bar"><span class="grow" style:width="{(amt / max) * 100}%"></span></span>
-        <span class="val">{fmtIDR.format(amt)}</span>
-      </li>
-    {/each}
-  </ul>
-{/if}
+    <div class="tiles">
+      <a class="card tile" href="#/assets">
+        <span class="avatar sm" style:--hue="var(--h-blue)"><Icon name="wallet" size={18} /></span>
+        <span class="lbl">Total aset</span>
+        <b class="num">{fmtIDR.format(s.portfolio.total_idr)}</b>
+      </a>
+      <a class="card tile" href="#/analytics">
+        <span class="avatar sm" style:--hue="var(--h-teal)"><Icon name="chart" size={18} /></span>
+        <span class="lbl">Tabungan bulan ini</span>
+        <b class="num">{rate == null ? '–' : rate + '%'}</b>
+      </a>
+    </div>
 
-</div>
-<div>
-<h3>Terbaru</h3>
-{#each s.txs.slice(0, 10) as tx (tx.id)}
-  <TxRow {tx} showDate onclick={() => open(tx)} />
-{:else}
-  <p class="empty">Belum ada transaksi bulan ini.</p>
-{/each}
-</div>
+    <div class="sec"><h2>Pengeluaran per kategori</h2><a href="#/analytics">Analitik</a></div>
+    <section class="card">
+      {#if byCat.length}
+        <ul class="bars">
+          {#each byCat as [cat, amt]}
+            {@const look = catLook(cat)}
+            <li>
+              <span class="avatar sm" style:--hue={look.hue}><Icon name={look.icon} size={18} /></span>
+              <span class="what">
+                <span class="line"><span>{cat}</span><span class="num">{fmtIDR.format(amt)}</span></span>
+                <span class="bar"><span class="grow" style:width="{(amt / max) * 100}%" style:background={look.hue}></span></span>
+              </span>
+            </li>
+          {/each}
+        </ul>
+      {:else}
+        <p class="empty">Belum ada pengeluaran bulan ini.</p>
+      {/if}
+    </section>
+  </div>
+
+  <div class="stack">
+    <div class="sec"><h2>Transaksi terbaru</h2><a href="#/tx">Lihat semua</a></div>
+    <section class="card list">
+      {#each s.txs.slice(0, 10) as tx (tx.id)}
+        <TxRow {tx} showDate onclick={() => open(tx)} />
+      {:else}
+        <p class="empty">Belum ada transaksi bulan ini.</p>
+      {/each}
+    </section>
+  </div>
 </div>
 
 <style>
-  .gap {
-    margin-top: 8px;
+  .cols {
+    display: grid;
+    gap: 12px;
   }
   @media (min-width: 900px) {
     .cols {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 40px;
-      align-items: start;
+      gap: 24px;
     }
-    .cols > div > h3:first-child {
+    .cols > .stack:last-child .sec {
       margin-top: 0;
     }
-    .totals b {
-      font-size: 18px;
-    }
   }
-  .totals {
+  .balance {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    padding: 18px 18px 16px;
+    border-radius: 20px;
+    background: var(--accent);
+    color: var(--hero-text);
+    box-shadow: 0 8px 24px color-mix(in srgb, var(--accent) 28%, transparent);
+  }
+  .flow {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 8px;
+    padding-top: 14px;
+    border-top: 1px solid var(--hero-track);
   }
-  .totals div {
-    background: var(--surface);
-    border-radius: 12px;
-    padding: 12px;
+  .flow div {
     display: grid;
-    gap: 4px;
+    gap: 2px;
     min-width: 0;
   }
-  .totals span {
-    color: var(--muted);
+  .flow span {
+    color: var(--hero-muted);
     font-size: 12px;
   }
-  .totals b {
-    font-size: 15px;
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-  }
-  @media (max-width: 459px) {
-    .totals {
-      grid-template-columns: 1fr 1fr;
-    }
-    .totals div:last-child {
-      grid-column: span 2;
-    }
-  }
-  .in {
-    color: var(--in);
-  }
-  h3 {
+  .flow b {
     font-size: 14px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .tiles {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  .tile {
+    display: grid;
+    gap: 4px;
+    color: var(--text);
+    text-decoration: none;
+    min-width: 0;
+  }
+  .tile .avatar {
+    margin-bottom: 6px;
+  }
+  .lbl {
     color: var(--muted);
-    margin: 24px 0 8px;
-    font-weight: 600;
+    font-size: 13px;
+  }
+  .tile b {
+    font-size: 17px;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .bars {
     list-style: none;
     padding: 0;
     margin: 0;
     display: grid;
-    gap: 8px;
+    gap: 14px;
   }
   .bars li {
-    display: grid;
-    grid-template-columns: 84px 1fr auto;
-    gap: 8px;
+    display: flex;
     align-items: center;
-    font-size: 13px;
+    gap: 12px;
+  }
+  .what {
+    flex: 1;
+    min-width: 0;
+    display: grid;
+    gap: 6px;
+  }
+  .line {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 14px;
+  }
+  .line .num {
+    font-weight: 600;
   }
   .bar {
-    height: 8px;
-    background: var(--surface);
-    border-radius: 4px;
+    height: 6px;
+    background: var(--bg);
+    border-radius: 3px;
     overflow: hidden;
   }
   .bar span {
     display: block;
     height: 100%;
-    background: var(--accent);
-    border-radius: 4px;
-  }
-  .val {
-    font-variant-numeric: tabular-nums;
-  }
-  .empty {
-    color: var(--muted);
+    border-radius: 3px;
   }
 </style>

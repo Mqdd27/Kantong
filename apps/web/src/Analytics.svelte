@@ -1,6 +1,9 @@
 <script>
   import { s, fmtIDR, fmtMonth, shiftMonth, mask } from './lib/store.svelte.js'
   import { api } from './lib/api.js'
+  import { catLook } from './lib/look.js'
+  import PageHead from './PageHead.svelte'
+  import Icon from './Icon.svelte'
 
   const N = 6
   const SAVING = new Set(['Investasi']) // out-categories that are saving, not spending
@@ -70,12 +73,10 @@
   }
 </script>
 
-<header>
-  <h2>Analitik</h2>
-  <span class="muted">{months.length ? `${fmtMonth(months[0].month)} – ${fmtMonth(s.month)}` : ''}</span>
-</header>
+<PageHead title="Analitik" />
+<p class="range muted">{months.length ? `${fmtMonth(months[0].month)} – ${fmtMonth(s.month)}` : ''}</p>
 
-<section class="tiles">
+<section class="card tiles">
   <div><span>Rata-rata pengeluaran / bulan</span><b>{fmtIDR.format(avgSpend)}</b></div>
   <div><span>Rata-rata tingkat tabungan</span><b>{avgRate == null ? '–' : Math.round(avgRate * 100) + '%'}</b></div>
   <div><span>Diinvestasikan ({N} bln)</span><b>{fmtIDR.format(months.reduce((n, m) => n + m.save, 0))}</b></div>
@@ -138,12 +139,15 @@
     <ul class="cats">
       {#each cats as x (x.c)}
         {@const diff = x.avg ? (x.now - x.avg) / x.avg : null}
+        {@const look = catLook(x.c)}
         <li>
+          <span class="avatar sm" style:--hue={look.hue}><Icon name={look.icon} size={18} /></span>
+          <div class="what">
           <div class="line">
             <span>{x.c}</span>
             <span class="amt">
               {fmtIDR.format(x.now)}
-              {#if diff != null}<small class:neg={diff > 0.1} class:pos={diff < -0.1}>{diff > 0 ? '▲' : '▼'} {Math.abs(Math.round(diff * 100))}%</small>{/if}
+              {#if diff != null}<small class:neg={diff > 0.1} class:pos={diff < -0.1}><Icon name={diff > 0 ? 'up' : 'down'} size={12} label={diff > 0 ? 'naik' : 'turun'} />{Math.abs(Math.round(diff * 100))}%</small>{/if}
             </span>
           </div>
           <div class="track">
@@ -151,6 +155,7 @@
             {#if x.avg}<i class="grow" style:left="{(x.avg / catMax) * 100}%" title="Rata-rata {fmtIDR.format(x.avg)}"></i>{/if}
           </div>
           <div class="muted small">rata-rata {fmtIDR.format(x.avg)}</div>
+          </div>
         </li>
       {:else}
         <li class="muted">Belum ada data.</li>
@@ -160,15 +165,8 @@
 </div>
 
 <style>
-  header {
-    display: flex;
-    align-items: baseline;
-    gap: 12px;
-    margin-bottom: 16px;
-  }
-  h2 {
-    margin: 0;
-    font-size: 20px;
+  .range {
+    margin: -8px 0 12px;
   }
   .muted {
     color: var(--muted);
@@ -181,12 +179,9 @@
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: 8px;
-    margin-bottom: 8px;
+    margin-bottom: 12px;
   }
   .tiles div {
-    background: var(--surface);
-    border-radius: 12px;
-    padding: 12px;
     display: grid;
     gap: 4px;
     min-width: 0;
@@ -202,7 +197,7 @@
   }
   .cols {
     display: grid;
-    gap: 8px;
+    gap: 12px;
   }
   .cols > * {
     min-width: 0;
@@ -217,14 +212,10 @@
       font-size: 20px;
     }
   }
-  .card {
-    background: var(--surface);
-    border-radius: 14px;
-    padding: 16px;
-  }
   h3 {
-    margin: 0 0 8px;
-    font-size: 15px;
+    margin: 0 0 12px;
+    font-size: 16px;
+    font-weight: 650;
   }
   .legend {
     display: flex;
@@ -326,7 +317,16 @@
     padding: 0;
     margin: 0;
     display: grid;
-    gap: 14px;
+    gap: 16px;
+  }
+  .cats li {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .what {
+    flex: 1;
+    min-width: 0;
   }
   .line {
     display: flex;
@@ -339,6 +339,9 @@
     white-space: nowrap;
   }
   .amt small {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
     font-size: 12px;
     margin-left: 4px;
   }

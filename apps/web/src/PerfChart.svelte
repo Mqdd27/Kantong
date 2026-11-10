@@ -113,7 +113,8 @@
 <style>
   .card {
     background: var(--surface);
-    border-radius: 14px;
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
     padding: 16px;
   }
   header {

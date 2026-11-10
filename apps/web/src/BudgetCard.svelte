@@ -1,8 +1,9 @@
 <script>
   import { s, fmtIDR } from './lib/store.svelte.js'
+  import Icon from './Icon.svelte'
 
-  /** compact: Home version with a link to the Budget page */
-  let { compact = false } = $props()
+  /** compact: Home version with a link to the Budget page; hero: sits on the green balance card */
+  let { compact = false, hero = false } = $props()
 
   const b = $derived(s.budget)
   const limit = $derived(b?.overall ?? 0)
@@ -21,7 +22,7 @@
   const daily = $derived(b?.days_left && left > 0 ? left / b.days_left : 0)
 </script>
 
-<section class="card {state}">
+<section class="bc {state}" class:card={!hero} class:hero>
   {#if !b}
     <p class="muted">Memuat budget…</p>
   {:else if !limit}
@@ -32,7 +33,7 @@
   {:else}
     <div class="row">
       <span class="label">{left >= 0 ? 'Sisa bisa dibelanjakan' : 'Melebihi budget'}</span>
-      {#if compact}<a class="link" href="#/budget">Detail ›</a>{/if}
+      {#if compact}<a class="link" href="#/budget">Detail<Icon name="right" size={16} /></a>{/if}
     </div>
     <b class="big">{fmtIDR.format(Math.abs(left))}</b>
     <div class="track" role="img" aria-label="Terpakai {fmtIDR.format(b.spent)}, tagihan mendatang {fmtIDR.format(b.upcoming_total)}, dari budget {fmtIDR.format(limit)}">
@@ -46,9 +47,9 @@
       <span>Budget {fmtIDR.format(limit)}</span>
     </div>
     {#if state === 'warn'}
-      <p class="status">⚠︎ {used >= 90 ? `Sudah ${Math.round(used)}% terpakai` : 'Pengeluaran lebih cepat dari jadwal'}</p>
+      <p class="status"><Icon name="alert" size={16} />{used >= 90 ? `Sudah ${Math.round(used)}% terpakai` : 'Pengeluaran lebih cepat dari jadwal'}</p>
     {:else if state === 'over'}
-      <p class="status">✕ Lewat budget {fmtIDR.format(-left)}</p>
+      <p class="status"><Icon name="alert" size={16} />Lewat budget {fmtIDR.format(-left)}</p>
     {/if}
     {#if daily}
       <p class="muted small">Jatah per hari <b>{fmtIDR.format(Math.floor(daily))}</b> · {b.days_left} hari lagi</p>
@@ -57,12 +58,23 @@
 </section>
 
 <style>
-  .card {
-    background: var(--surface);
-    border-radius: 14px;
-    padding: 16px;
+  .bc {
     display: grid;
     gap: 8px;
+  }
+  /* on the brand-colored card: re-point the tokens this card reads */
+  .hero {
+    --text: var(--hero-text);
+    --muted: var(--hero-muted);
+    --bg: var(--hero-track);
+    --line: var(--hero-muted);
+    --accent: var(--hero-text);
+    --warn: var(--hero-warn);
+    --out: var(--hero-out);
+    color: var(--text);
+  }
+  .hero .big {
+    font-size: 32px;
   }
   .row {
     display: flex;
@@ -83,8 +95,11 @@
     color: var(--text);
   }
   .link {
+    display: flex;
+    align-items: center;
     color: var(--muted);
     font-size: 13px;
+    font-weight: 600;
     text-decoration: none;
   }
   .btn {
@@ -96,7 +111,9 @@
     font-size: 14px;
   }
   .big {
-    font-size: 26px;
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
     font-variant-numeric: tabular-nums;
   }
   .over .big {
@@ -152,6 +169,9 @@
     vertical-align: -1px;
   }
   .status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     margin: 0;
     font-size: 13px;
     font-weight: 600;

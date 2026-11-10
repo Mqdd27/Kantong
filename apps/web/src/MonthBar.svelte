@@ -1,44 +1,40 @@
 <script>
   import { s, fmtMonth, shiftMonth, setMonth } from './lib/store.svelte.js'
+  import Icon from './Icon.svelte'
 </script>
 
-<header>
-  <button aria-label="Bulan sebelumnya" onclick={() => setMonth(shiftMonth(s.month, -1))}>‹</button>
+<div class="month">
+  <button aria-label="Bulan sebelumnya" onclick={() => setMonth(shiftMonth(s.month, -1))}><Icon name="left" /></button>
   <h2>{fmtMonth(s.month)}</h2>
-  <button aria-label="Bulan berikutnya" onclick={() => setMonth(shiftMonth(s.month, 1))}>›</button>
-  <span class="dot" class:on={s.live} role="img" aria-label={s.live ? 'Realtime tersambung' : 'Menyambung…'} title={s.live ? 'Realtime tersambung' : 'Menyambung…'}></span>
-</header>
+  <button aria-label="Bulan berikutnya" onclick={() => setMonth(shiftMonth(s.month, 1))}><Icon name="right" /></button>
+</div>
 
 <style>
-  header {
+  .month {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 8px;
-    margin-bottom: 16px;
+    margin-bottom: 12px;
+    padding: 2px;
+    border-radius: 999px;
+    background: var(--surface);
+    box-shadow: var(--shadow);
   }
   h2 {
-    flex: 1;
-    text-align: center;
     margin: 0;
-    font-size: 18px;
+    font-size: 15px;
+    font-weight: 600;
   }
   button {
-    background: none;
-    border: 0;
-    color: var(--text);
-    font-size: 26px;
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 40px;
     padding: 0;
-    min-width: 44px;
-    min-height: 44px;
-  }
-  .dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--muted);
-    transition: background-color var(--t-sheet);
-  }
-  .dot.on {
-    background: var(--in);
+    border: 0;
+    border-radius: 999px;
+    background: none;
+    color: var(--text);
   }
 </style>
