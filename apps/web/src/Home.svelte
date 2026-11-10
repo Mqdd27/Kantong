@@ -109,6 +109,9 @@
   .home > * {
     min-width: 0;
   }
+  .c {
+    order: 1; /* phone: categories after recent transactions; desktop uses grid areas */
+  }
   @media (min-width: 900px) {
     .home {
       grid-template-columns: 1fr 1fr;
