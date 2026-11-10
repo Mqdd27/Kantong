@@ -368,6 +368,13 @@ func (a *app) deleteTx(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, err)
 		return
 	}
+	if t.SourceRef != nil && *t.SourceRef != "" {
+		// otherwise the email cron sees the Message-ID as new again and re-imports it
+		if _, err := a.db.Exec(`INSERT OR IGNORE INTO deleted_refs (ref) VALUES (?)`, *t.SourceRef); err != nil {
+			a.fail(w, err)
+			return
+		}
+	}
 	a.hub.publish("transaction.deleted", t)
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -386,7 +393,7 @@ func (a *app) checkRefs(w http.ResponseWriter, r *http.Request) {
 	unknown := []string{}
 	for _, ref := range body.Refs {
 		var n int
-		if err := a.db.QueryRow(`SELECT COUNT(*) FROM transactions WHERE source_ref = ?`, ref).Scan(&n); err != nil {
+		if err := a.db.QueryRow(`SELECT (SELECT COUNT(*) FROM transactions WHERE source_ref = ?1) + (SELECT COUNT(*) FROM deleted_refs WHERE ref = ?1)`, ref).Scan(&n); err != nil {
 			a.fail(w, err)
 			return
 		}

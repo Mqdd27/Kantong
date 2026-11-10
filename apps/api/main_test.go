@@ -95,6 +95,14 @@ func TestCheckRefs(t *testing.T) {
 	if len(res.Unknown) != 1 || res.Unknown[0] != "<m2@bca>" {
 		t.Fatalf("unknown: %+v", res.Unknown)
 	}
+	// a deleted email transaction stays known, so the cron doesn't re-import it
+	var list []Tx
+	call(t, srv, "GET", "/api/transactions?month=2026-11", "", &list)
+	call(t, srv, "DELETE", "/api/transactions/"+strconv.FormatInt(list[0].ID, 10), "", nil)
+	call(t, srv, "POST", "/api/source-refs/check", `{"refs":["<m1@bca>"]}`, &res)
+	if len(res.Unknown) != 0 {
+		t.Fatalf("deleted ref came back: %+v", res.Unknown)
+	}
 }
 
 func TestAuth(t *testing.T) {
