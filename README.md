@@ -25,7 +25,7 @@ Satu binary Go (API + SQLite + SSE + PWA Svelte yang di-embed), image Docker ±2
 
 ## Fitur
 
-- **Transaksi**: masuk / keluar / transfer dengan kategori. Bisa dicari di semua bulan dan di-export ke Excel (.xlsx).
+- **Transaksi**: masuk / keluar / transfer dengan kategori. Bisa dicari di semua bulan, dikelompokkan per hari dengan total harian, dan di-export ke Excel (.xlsx) lewat ikon unduh di header halaman Transaksi.
 - **Multi-currency**: transaksi dalam USD/SGD/JPY/... disimpan nominal aslinya, lalu dikonversi ke IDR pakai kurs hari itu ([frankfurter.dev](https://frankfurter.dev), data ECB).
 - **Budget bulanan**: total dan per kategori, berlaku terus ke bulan berikutnya sampai diubah. Ada sisa bisa dibelanjakan (dikurangi tagihan yang akan datang), jatah per hari, dan penanda posisi bulan.
 - **Transaksi berulang**: gaji, langganan, cicilan, parkir kantor. Mingguan dengan pilihan hari (mis. Sen–Jum), bulanan dengan pilihan bulan, atau tahunan. Bisa dicatat otomatis atau manual (Catat / Lewati).
@@ -33,12 +33,12 @@ Satu binary Go (API + SQLite + SSE + PWA Svelte yang di-embed), image Docker ±2
 - **Order investasi dari email**: konfirmasi pembelian dicatat *pending*, lalu email berhasil/gagal menyelesaikannya dan meng-update saldo aset.
 - **Kalender**: pengeluaran per tanggal dengan warna sesuai besarnya, tagihan berulang yang akan datang, jumlah hari tanpa belanja, dan daftar transaksi per hari.
 - **Analitik**: 6 bulan masuk vs keluar, tingkat tabungan, dan kategori bulan ini dibanding rata-ratanya.
-- **Review & aturan**: transaksi hasil parsing email yang kurang yakin ditandai untuk dicek sekali tap. Koreksi kategori bisa disimpan jadi aturan ("selalu kategorikan Gojek sebagai Transport"), dan email berikutnya dari merchant itu langsung masuk dengan kategori yang benar.
+- **Review & aturan**: transaksi hasil parsing email yang kurang yakin ditandai untuk dicek sekali tap. Selama ada yang perlu direview, kartu kuning muncul di Beranda dan Transaksi (di desktop juga ada angka di sidebar). Daftar aturan dibuka dari ikon label di header Transaksi. Koreksi kategori bisa disimpan jadi aturan ("selalu kategorikan Gojek sebagai Transport"), dan email berikutnya dari merchant itu langsung masuk dengan kategori yang benar.
 - **Foto struk → transaksi**: kirim foto struk ke Hermes di Telegram, transaksi keluarnya langsung tercatat.
 - **Notifikasi Telegram**: setiap transaksi baru dari email dikirim ke Telegram, misalnya `Keluar Rp25.000 · Jajan · Indomaret (perlu review)`.
 - **Backup harian**: salinan database tiap jam 03:00 WIB, 14 hari terakhir disimpan.
 - **Realtime**: transaksi baru dari agent langsung muncul di semua perangkat (SSE).
-- **Tampilan**: layout terpisah untuk desktop dan mobile, mengikuti dark mode sistem, dan bisa di-install sebagai PWA.
+- **Tampilan**: di HP ada tab bar bawah (Beranda, Transaksi, tombol **+** di tengah, Budget, Aset); Kalender dibuka dari toggle Daftar/Kalender di Transaksi, Analitik dari Beranda. Di desktop semua menu ada di sidebar kiri. Kategori dan jenis aset punya ikon berwarna, tombol mata di pojok kanan atas menyembunyikan semua nominal, mengikuti dark mode sistem, dan bisa di-install sebagai PWA.
 
 | Budget | Aset |
 |---|---|

@@ -8,3 +8,8 @@ apps/api/kantong
 apps/api/web/dist/*
 !apps/api/web/dist/.gitkeep
 .DS_Store
+
+# design-tool working files (impeccable)
+apps/web/PRODUCT.md
+apps/web/DESIGN.md
+apps/web/.impeccable/

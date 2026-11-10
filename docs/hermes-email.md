@@ -109,7 +109,7 @@ Setiap 10 menit, `fetch.py` jalan duluan tanpa LLM. Hermes cuma dibangunkan kala
 
 1. Lakukan transaksi kecil, misalnya top-up e-wallet Rp10.000.
 2. Tunggu sampai 10 menit. Notif Telegram `Transfer Rp10.000 · …` akan masuk, dan transaksinya muncul di PWA tanpa perlu refresh.
-3. Kalau kategorinya salah, buka **Review** di PWA, lalu tap kategori yang benar dengan opsi "Ingat pilihan" menyala. Email berikutnya dari merchant itu langsung masuk dengan kategori tersebut.
+3. Kalau kategorinya salah, tap kartu kuning **"… transaksi perlu direview"** di Beranda PWA (di desktop: menu **Review** di sidebar), lalu tap kategori yang benar dengan opsi "Ingat pilihan" menyala. Email berikutnya dari merchant itu langsung masuk dengan kategori tersebut.
 
 Mau mengisi aset dari screenshot portofolio juga? Lihat [hermes-assets.md](hermes-assets.md).
 
