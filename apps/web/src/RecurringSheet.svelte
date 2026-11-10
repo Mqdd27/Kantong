@@ -39,12 +39,12 @@
   }
 </script>
 
-<dialog bind:this={dialog} onclose={onclose} onclick={(e) => e.target === dialog && dialog.close()}>
+<dialog class="sheet" bind:this={dialog} onclose={onclose} onclick={(e) => e.target === dialog && dialog.close()}>
   <form onsubmit={save}>
     <h2>{rec ? 'Edit transaksi berulang' : 'Transaksi berulang baru'}</h2>
-    <div class="types">
+    <div class="types seg">
       {#each [['out', 'Keluar'], ['in', 'Masuk']] as [v, label]}
-        <button type="button" class:on={type === v} onclick={() => (type = v)}>{label}</button>
+        <button type="button" aria-pressed={type === v} onclick={() => (type = v)}>{label}</button>
       {/each}
     </div>
     <label>Nama <input bind:value={merchant} placeholder="mis. Claude Pro, Gaji, Internet" required autocomplete="off" /></label>
@@ -80,7 +80,7 @@
       <div class="pick">
         <span>Hari</span>
         <div class="chips">
-          {#each WEEK as i}<button type="button" class:on={mask & (1 << i)} onclick={() => toggle(i)}>{DAYS[i]}</button>{/each}
+          {#each WEEK as i}<button type="button" aria-pressed={!!(mask & (1 << i))} onclick={() => toggle(i)}>{DAYS[i]}</button>{/each}
           <button type="button" class="preset" onclick={() => (mask = 62)}>Hari kerja</button>
         </div>
         <small>{mask ? 'Libur atau WFH: tekan Lewati di Budget (catat manual) atau hapus transaksinya (otomatis).' : 'Kosong = tiap 7 hari dari tanggal berikutnya.'}</small>
@@ -89,7 +89,7 @@
       <div class="pick">
         <span>Bulan</span>
         <div class="chips">
-          {#each MONTHS as m, i}<button type="button" class:on={mask & (1 << i)} onclick={() => toggle(i)}>{m}</button>{/each}
+          {#each MONTHS as m, i}<button type="button" aria-pressed={!!(mask & (1 << i))} onclick={() => toggle(i)}>{m}</button>{/each}
         </div>
         <small>Di tanggal yang sama dengan "Tanggal berikutnya". Kosong = tiap bulan.</small>
       </div>
@@ -108,41 +108,6 @@
 </dialog>
 
 <style>
-  dialog {
-    border: 0;
-    padding: 0;
-    width: 100%;
-    max-width: 640px;
-    margin: auto auto 0;
-    border-radius: 16px 16px 0 0;
-    background: var(--bg);
-    color: var(--text);
-  }
-  @media (min-width: 900px) {
-    dialog {
-      max-width: 480px;
-      margin: auto;
-      border-radius: 16px;
-    }
-  }
-  dialog::backdrop {
-    background: rgb(0 0 0 / 0.45);
-  }
-  form {
-    display: grid;
-    gap: 12px;
-    padding: 20px 16px calc(env(safe-area-inset-bottom) + 16px);
-  }
-  h2 {
-    margin: 0;
-    font-size: 18px;
-  }
-  label {
-    display: grid;
-    gap: 4px;
-    font-size: 13px;
-    color: var(--muted);
-  }
   .pick {
     display: grid;
     gap: 6px;
@@ -159,18 +124,13 @@
     font-size: 13px;
     border-radius: 999px;
   }
-  .chips .on {
+  .chips [aria-pressed='true'] {
     background: var(--accent);
     color: var(--on-accent);
     border-color: var(--accent);
   }
   .chips .preset {
     color: var(--muted);
-  }
-  .two {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
   }
   .check {
     grid-template-columns: auto 1fr;
@@ -186,26 +146,5 @@
   }
   .check small {
     color: var(--muted);
-  }
-  .types {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 6px;
-  }
-  .types button {
-    padding: 10px 0;
-  }
-  .types .on {
-    border-color: var(--accent);
-    font-weight: 600;
-  }
-  .actions {
-    display: flex;
-    gap: 8px;
-    justify-content: flex-end;
-  }
-  .danger {
-    margin-right: auto;
-    color: var(--out);
   }
 </style>

@@ -96,8 +96,9 @@
           <g
             role="presentation"
             class:dim={hover != null && hover !== i}
-            onpointerenter={() => (hover = i)}
-            onpointerleave={() => (hover = null)}
+            onpointerenter={(e) => e.pointerType === 'mouse' && (hover = i)}
+            onpointerleave={(e) => e.pointerType === 'mouse' && (hover = null)}
+            onclick={() => (hover = hover === i ? null : i)}
           >
             <rect class="hit" x={i * geo.band} y="0" width={geo.band} height={H} />
             <path class="b1" d={bar(x0, geo.y(m.in), geo.y(0))} />

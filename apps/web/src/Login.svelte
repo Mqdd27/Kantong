@@ -20,9 +20,10 @@
 
 <form onsubmit={submit}>
   <h1>Kantong</h1>
-  <input type="password" bind:value={password} placeholder="Password" autocomplete="current-password" required />
+  <label for="pw" class="sr-only">Password</label>
+  <input id="pw" type="password" bind:value={password} placeholder="Password" autocomplete="current-password" required />
   <button class="primary" disabled={busy}>Masuk</button>
-  {#if error}<p class="err">{error}</p>{/if}
+  {#if error}<p class="err" role="alert">{error}</p>{/if}
 </form>
 
 <style>

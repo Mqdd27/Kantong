@@ -8,7 +8,12 @@
   --on-accent: #ffffff;
   --in: #1b7f4b;
   --out: #c2412d;
-  --warn: #c27a12;
+  --warn: #9e5f00;
+  --on-warn: #ffffff;
+  --on-out: #ffffff;
+  --field: #8a8a85; /* input borders: >=3:1 against surface and bg (WCAG 1.4.11) */
+  --series-1: #2a78d6; /* nilai */
+  --series-2: #eb6834; /* modal */
   color-scheme: light dark;
 }
 
@@ -24,6 +29,11 @@
     --in: #5cc98c;
     --out: #f0715d;
     --warn: #d99a3a;
+    --on-warn: #1f1405;
+    --on-out: #2b0c06;
+    --field: #6c6d73;
+    --series-1: #3987e5;
+    --series-2: #d95926;
   }
 }
 
@@ -50,7 +60,7 @@ input,
 select {
   width: 100%;
   padding: 10px 12px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--field);
   border-radius: 10px;
   background: var(--surface);
   color: var(--text);
@@ -77,13 +87,77 @@ button:disabled {
   opacity: 0.5;
 }
 
-:root {
-  --series-1: #2a78d6; /* nilai */
-  --series-2: #eb6834; /* modal */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    --series-1: #3987e5;
-    --series-2: #d95926;
+
+/* segmented choice: pressed button carries the state */
+.seg {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 6px;
+}
+.seg button {
+  padding: 10px 0;
+}
+.seg [aria-pressed='true'] {
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
+/* bottom sheet on mobile, centered dialog on desktop (TxSheet, RecurringSheet, Assets) */
+dialog.sheet {
+  border: 0;
+  padding: 0;
+  width: 100%;
+  max-width: 640px;
+  margin: auto auto 0;
+  border-radius: 16px 16px 0 0;
+  background: var(--bg);
+  color: var(--text);
+}
+dialog.sheet::backdrop {
+  background: rgb(0 0 0 / 0.45);
+}
+@media (min-width: 900px) {
+  dialog.sheet {
+    max-width: 480px;
+    margin: auto;
+    border-radius: 16px;
   }
+}
+.sheet form {
+  display: grid;
+  gap: 12px;
+  padding: 20px 16px calc(env(safe-area-inset-bottom) + 16px);
+}
+.sheet h2 {
+  margin: 0;
+  font-size: 18px;
+}
+.sheet label {
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.sheet .two {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.sheet .actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.sheet .danger {
+  margin-right: auto;
+  color: var(--out);
 }

@@ -54,7 +54,7 @@
   }
   .badge {
     background: var(--warn);
-    color: #fff;
+    color: var(--on-warn);
     border-radius: 4px;
     padding: 0 5px;
     font-size: 11px;

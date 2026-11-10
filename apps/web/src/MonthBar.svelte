@@ -6,7 +6,7 @@
   <button aria-label="Bulan sebelumnya" onclick={() => setMonth(shiftMonth(s.month, -1))}>‹</button>
   <h2>{fmtMonth(s.month)}</h2>
   <button aria-label="Bulan berikutnya" onclick={() => setMonth(shiftMonth(s.month, 1))}>›</button>
-  <span class="dot" class:on={s.live} title={s.live ? 'Realtime tersambung' : 'Menyambung…'}></span>
+  <span class="dot" class:on={s.live} role="img" aria-label={s.live ? 'Realtime tersambung' : 'Menyambung…'} title={s.live ? 'Realtime tersambung' : 'Menyambung…'}></span>
 </header>
 
 <style>
@@ -27,7 +27,9 @@
     border: 0;
     color: var(--text);
     font-size: 26px;
-    padding: 0 12px;
+    padding: 0;
+    min-width: 44px;
+    min-height: 44px;
   }
   .dot {
     width: 8px;

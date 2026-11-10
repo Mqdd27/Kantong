@@ -2,9 +2,9 @@
   let { active } = $props()
 </script>
 
-<div class="views" role="tablist">
-  <a href="#/tx" role="tab" aria-selected={active === 'tx'} class:on={active === 'tx'}>Daftar</a>
-  <a href="#/calendar" role="tab" aria-selected={active === 'calendar'} class:on={active === 'calendar'}>Kalender</a>
+<div class="views">
+  <a href="#/tx" aria-current={active === 'tx' ? 'page' : undefined} class:on={active === 'tx'}>Daftar</a>
+  <a href="#/calendar" aria-current={active === 'calendar' ? 'page' : undefined} class:on={active === 'calendar'}>Kalender</a>
 </div>
 
 <style>

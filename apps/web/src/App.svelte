@@ -73,7 +73,8 @@
     <span class="brand">Kantong</span>
     <button class="primary new" onclick={() => (sheet = {})}>+ Transaksi</button>
     {#each tabs as [href, label]}
-      <a href={'#' + href} class:active={route === href || (href === '/tx' && route === '/calendar' && !wide)} class:desk={href === '/review' || href === '/rules' || href === '/calendar'}>
+      {@const active = route === href || (href === '/tx' && route === '/calendar' && !wide)}
+      <a href={'#' + href} aria-current={active ? 'page' : undefined} class:active class:desk={href === '/review' || href === '/rules' || href === '/calendar'}>
         {label}
         {#if href === '/review' && reviewCount}<span class="count">{reviewCount}</span>{/if}
       </a>
@@ -179,7 +180,7 @@
   }
   .count {
     background: var(--warn);
-    color: #fff;
+    color: var(--on-warn);
     border-radius: 999px;
     padding: 0 6px;
     font-size: 11px;
@@ -204,7 +205,7 @@
     right: 16px;
     top: calc(env(safe-area-inset-top) + 12px);
     background: var(--out);
-    color: #fff;
+    color: var(--on-out);
     padding: 12px 14px;
     border-radius: 10px;
     z-index: 10;

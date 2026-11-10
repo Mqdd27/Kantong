@@ -57,6 +57,7 @@
       class="day"
       class:today={d.date === today}
       class:sel={sel?.date === d.date}
+      aria-pressed={sel?.date === d.date}
       class:future={d.date > today}
       style:--heat={d.out ? Math.round(12 + 58 * Math.sqrt(d.out / max)) + '%' : '0%'}
       aria-label="{fmtDay.format(new Date(d.date + 'T12:00:00+07:00'))}: keluar {fmtIDR.format(d.out)}{d.in ? ', masuk ' + fmtIDR.format(d.in) : ''}{d.up ? ', tagihan ' + fmtIDR.format(d.up) : ''}"
@@ -105,6 +106,14 @@
     font-size: 13px;
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
+  }
+  @media (max-width: 459px) {
+    .tiles {
+      grid-template-columns: 1fr 1fr;
+    }
+    .tiles div:last-child {
+      grid-column: span 2;
+    }
   }
   .grid {
     display: grid;

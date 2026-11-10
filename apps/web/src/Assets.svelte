@@ -194,11 +194,11 @@
 <button class="add" onclick={() => openEdit()}>+ Tambah aset</button>
 
 {#if edit}
-  <dialog bind:this={dialog} onclose={() => (edit = null)} onclick={(e) => e.target === dialog && dialog.close()}>
+  <dialog class="sheet" bind:this={dialog} onclose={() => (edit = null)} onclick={(e) => e.target === dialog && dialog.close()}>
     {#if edit.id}
-      <div class="tabs">
-        <button type="button" class:on={tab === 'history'} onclick={() => (tab = 'history')}>Riwayat</button>
-        <button type="button" class:on={tab === 'edit'} onclick={() => (tab = 'edit')}>Edit</button>
+      <div class="tabs seg">
+        <button type="button" aria-pressed={tab === 'history'} onclick={() => (tab = 'history')}>Riwayat</button>
+        <button type="button" aria-pressed={tab === 'edit'} onclick={() => (tab = 'edit')}>Edit</button>
       </div>
     {/if}
     {#if tab === 'history'}
@@ -471,39 +471,8 @@
     background: none;
     color: var(--text);
   }
-  dialog {
-    border: 0;
-    padding: 0;
-    width: 100%;
-    max-width: 640px;
-    margin: auto auto 0;
-    border-radius: 16px 16px 0 0;
-    background: var(--bg);
-    color: var(--text);
-  }
-  @media (min-width: 900px) {
-    dialog {
-      max-width: 480px;
-      margin: auto;
-      border-radius: 16px;
-    }
-  }
   .tabs {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 6px;
     padding: 16px 16px 0;
-  }
-  .tabs button {
-    border: 1px solid var(--line);
-    background: var(--surface);
-    color: var(--text);
-    border-radius: 10px;
-    padding: 8px 0;
-  }
-  .tabs .on {
-    border-color: var(--accent);
-    font-weight: 600;
   }
   .hist {
     padding: 16px 16px calc(env(safe-area-inset-bottom) + 16px);
@@ -530,37 +499,5 @@
   .order small {
     color: var(--muted);
     font-size: 13px;
-  }
-  dialog::backdrop {
-    background: rgb(0 0 0 / 0.45);
-  }
-  form {
-    display: grid;
-    gap: 12px;
-    padding: 20px 16px calc(env(safe-area-inset-bottom) + 16px);
-  }
-  h2 {
-    margin: 0;
-    font-size: 18px;
-  }
-  label {
-    display: grid;
-    gap: 4px;
-    font-size: 13px;
-    color: var(--muted);
-  }
-  .two {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
-  }
-  .actions {
-    display: flex;
-    gap: 8px;
-    justify-content: flex-end;
-  }
-  .danger {
-    margin-right: auto;
-    color: var(--out);
   }
 </style>
