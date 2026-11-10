@@ -57,6 +57,9 @@ Planned defaults (from user spec, not from emails):
 - Account name = Jago, BCA, SeaBank, Stockbit, Bibit, Krom by sender.
 - to_account (transfer only): the destination account name when it is the user's own (same names as above, e.g. Jago -> SeaBank = account Jago, to_account SeaBank).
   Kantong moves both asset balances with it. Unknown destination -> leave empty (only the source balance drops).
+- Every `transfer` is `needs_review = true`, always. The email rarely says whose account the money went to, and the user often sends to friends (patungan, tukar saldo), not to own accounts.
+  Never guess `to_account` and never copy the bank's generic label (e.g. merchant "SeaBank to BCA") into it: leave `to_account` empty and `merchant` empty, so only the source balance drops until the user fixes it in Review.
+  Exception: destination named explicitly as an own account in the email (own name in `owner_name`, RDN pocket, own forex pocket) -> set `to_account`, still `needs_review = true`.
 - E-wallet top-up (ShopeePay, GoPay, OVO, DANA) from any bank: the user spends it right away (e.g. ShopeeFood), so it is NOT a transfer.
   -> type out, merchant = the e-wallet app (e.g. "ShopeePay"), note "Top up", category = best guess from context (Makan if nothing else is known),
   needs_review = true so the user picks the real category once in Review. Never also record the purchase made with that balance.
