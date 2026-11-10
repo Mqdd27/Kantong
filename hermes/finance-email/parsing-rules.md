@@ -24,6 +24,8 @@ Allowlist: noreply@jago.com, no-reply@stockbit.com, noreply@krom.id, bca@bca.co.
 - Gmail Forwarding Confirmation (forwarding-noreply@google.com)
 - Empty/test forwards without "Fwd:" and without a forwarded block
 - Promo, OTP, login info, monthly e-statement/laporan
+- Bibit coupon/redemption payout to RDN (subject like `Kupon <seri> Kamu Sudah Cair ke RDN Wallet`): the same money also arrives as a
+  Jago email `Kamu telah menerima uang di Kantong RDN Jago`, which is the one recorded. Put the Bibit email in `skip`.
 
 ## Output
 Fields: occurred_at, amount, type, category, merchant, account, to_account, note, source="email", source_ref (Message-ID with <>), confidence, needs_review (confidence<0.7).
@@ -43,6 +45,8 @@ Body (text/plain), label on one line, value after a blank line:
 - `Jumlah Tip` -> ignore unless > 0 (then add to amount only if clearly part of the debit; flag needs_review)
 Mapping: type=out, account=Jago. Merchant: strip trailing store number (`Kopi Kenangan 1320` -> `Kopi Kenangan`).
 Category: coffee/food/drink outlet -> Jajan (Makan only for full meals); ambiguous -> confidence ~0.75.
+Incoming to the RDN pocket (`Kamu telah menerima uang di Kantong RDN Jago`, e.g. SBN coupon from Bibit/Stockbit): type=in,
+account=Jago, merchant = the description (e.g. `Bibit - SR023-T3 Coupon`). This is the only record of a coupon payout (see Always skip).
 Other Jago subjects to expect (unverified): transfer in ("menerima"), transfer out to a person; "Kamu baru saja mengirimkan uang" in the body is generic text for all outgoing.
 
 ## Stockbit, Bibit, Krom, BCA (bca@bca.co.id, pasporbca@klikbca.com), SeaBank — UNVERIFIED
