@@ -1,15 +1,16 @@
 <script>
-  import { fmtIDR, fmtTime, fmtShort, fmtCur } from './lib/store.svelte.js'
+  import { fmtIDR, fmtTime, fmtShort, fmtCur, isFresh } from './lib/store.svelte.js'
 
   /** account: show a transfer as − (out of it) or + (into it) from that account's view */
   let { tx, onclick, showDate = false, account = '' } = $props()
+  const fresh = $derived(isFresh(tx.id))
   const into = (n) => n.trim().toLowerCase() === account.trim().toLowerCase()
   const sign = $derived(
     tx.type === 'in' ? '+' : tx.type === 'out' ? '−' : !account ? '' : into(tx.to_account || '') ? '+' : '−',
   )
 </script>
 
-<button class="row" {onclick}>
+<button class="row" class:fresh {onclick}>
   <span class="main">
     <span class="merchant">{tx.merchant || tx.category}</span>
     <span class="meta">
@@ -75,5 +76,21 @@
   }
   .transfer {
     color: var(--muted);
+  }
+  /* a transaction landing live: an accent wash that settles into the list */
+  .fresh {
+    animation: landed 1.6s var(--ease-out);
+  }
+  @keyframes landed {
+    from {
+      background-color: color-mix(in srgb, var(--accent) 22%, transparent);
+      box-shadow:
+        -8px 0 0 color-mix(in srgb, var(--accent) 22%, transparent),
+        8px 0 0 color-mix(in srgb, var(--accent) 22%, transparent);
+    }
+  }
+  .row:active {
+    scale: none;
+    background: color-mix(in srgb, var(--text) 6%, transparent);
   }
 </style>

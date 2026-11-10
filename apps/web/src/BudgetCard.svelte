@@ -36,9 +36,9 @@
     </div>
     <b class="big">{fmtIDR.format(Math.abs(left))}</b>
     <div class="track" role="img" aria-label="Terpakai {fmtIDR.format(b.spent)}, tagihan mendatang {fmtIDR.format(b.upcoming_total)}, dari budget {fmtIDR.format(limit)}">
-      <span class="spent" style:width="{pct(b.spent)}%"></span>
-      <span class="up" style:width="{Math.max(0, pct(b.spent + b.upcoming_total) - pct(b.spent))}%"></span>
-      {#if elapsed != null}<i class="marker" style:left="{elapsed}%" title="Hari ini"></i>{/if}
+      <span class="spent grow" style:width="{pct(b.spent)}%"></span>
+      <span class="up grow" style:width="{Math.max(0, pct(b.spent + b.upcoming_total) - pct(b.spent))}%"></span>
+      {#if elapsed != null}<i class="marker grow" style:left="{elapsed}%" title="Hari ini"></i>{/if}
     </div>
     <div class="legend">
       <span><i class="k spent"></i>Terpakai {fmtIDR.format(b.spent)}</span>

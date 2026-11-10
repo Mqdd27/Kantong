@@ -500,4 +500,8 @@
     color: var(--muted);
     font-size: 13px;
   }
+  button.row:active {
+    scale: none;
+    background: color-mix(in srgb, var(--text) 6%, transparent);
+  }
 </style>

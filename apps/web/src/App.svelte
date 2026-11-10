@@ -209,5 +209,19 @@
     padding: 12px 14px;
     border-radius: 10px;
     z-index: 10;
+    animation: toast-in var(--t-sheet) var(--ease-out);
+  }
+  @keyframes toast-in {
+    from {
+      translate: 0 -12px;
+      opacity: 0;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    @keyframes toast-in {
+      from {
+        opacity: 0;
+      }
+    }
   }
 </style>

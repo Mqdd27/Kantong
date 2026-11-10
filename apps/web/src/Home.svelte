@@ -35,7 +35,7 @@
     {#each byCat as [cat, amt]}
       <li>
         <span class="label">{cat}</span>
-        <span class="bar"><span style:width="{(amt / max) * 100}%"></span></span>
+        <span class="bar"><span class="grow" style:width="{(amt / max) * 100}%"></span></span>
         <span class="val">{fmtIDR.format(amt)}</span>
       </li>
     {/each}

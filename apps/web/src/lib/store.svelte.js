@@ -41,6 +41,10 @@ export const s = $state({
 
 const byNewest = (a, b) => (a.occurred_at < b.occurred_at ? 1 : a.occurred_at > b.occurred_at ? -1 : b.id - a.id)
 
+// ids that just arrived (email import, another device, this device): rows mounting in the next moment mark the landing
+const fresh = new Set()
+export const isFresh = (id) => fresh.has(id)
+
 function upsert(t) {
   const i = s.txs.findIndex((x) => x.id === t.id)
   if (t.occurred_at.slice(0, 7) !== s.month) {
@@ -48,7 +52,11 @@ function upsert(t) {
     return
   }
   if (i >= 0) s.txs[i] = t
-  else s.txs.push(t)
+  else {
+    s.txs.push(t)
+    fresh.add(t.id)
+    setTimeout(() => fresh.delete(t.id), 1500)
+  }
   s.txs.sort(byNewest)
 }
 

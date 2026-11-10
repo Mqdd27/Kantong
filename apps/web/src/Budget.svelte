@@ -97,7 +97,7 @@
               </span>
             </div>
             {#if r.limit}
-              <div class="bar"><span class:warn={p >= 90 && p <= 100} class:over={p > 100} style:width="{Math.min(p, 100)}%"></span></div>
+              <div class="bar"><span class="grow" class:warn={p >= 90 && p <= 100} class:over={p > 100} style:width="{Math.min(p, 100)}%"></span></div>
               <div class="sub">
                 {#if p > 100}<span class="overtxt">✕ lewat {fmtIDR.format(r.spent - r.limit)}</span>
                 {:else}sisa {fmtIDR.format(r.limit - r.spent)}{/if}
@@ -300,5 +300,9 @@
   .sm {
     padding: 4px 10px;
     font-size: 13px;
+  }
+  .rec:active {
+    scale: none;
+    background: color-mix(in srgb, var(--text) 6%, transparent);
   }
 </style>

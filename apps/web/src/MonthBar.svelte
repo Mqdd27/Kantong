@@ -36,6 +36,7 @@
     height: 8px;
     border-radius: 50%;
     background: var(--muted);
+    transition: background-color var(--t-sheet);
   }
   .dot.on {
     background: var(--in);

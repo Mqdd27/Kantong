@@ -147,8 +147,8 @@
             </span>
           </div>
           <div class="track">
-            <span style:width="{(x.now / catMax) * 100}%"></span>
-            {#if x.avg}<i style:left="{(x.avg / catMax) * 100}%" title="Rata-rata {fmtIDR.format(x.avg)}"></i>{/if}
+            <span class="grow" style:width="{(x.now / catMax) * 100}%"></span>
+            {#if x.avg}<i class="grow" style:left="{(x.avg / catMax) * 100}%" title="Rata-rata {fmtIDR.format(x.avg)}"></i>{/if}
           </div>
           <div class="muted small">rata-rata {fmtIDR.format(x.avg)}</div>
         </li>
