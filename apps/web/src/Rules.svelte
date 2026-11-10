@@ -1,6 +1,6 @@
 <script>
   import { api } from './lib/api.js'
-  import { act } from './lib/store.svelte.js'
+  import { s, act, editRule } from './lib/store.svelte.js'
   import { catLook } from './lib/look.js'
   import PageHead from './PageHead.svelte'
   import Icon from './Icon.svelte'
@@ -10,6 +10,11 @@
   load()
   async function del(id) {
     if (await act(`/rules/${id}`, 'DELETE')) load()
+  }
+  let editing = $state(null)
+  async function setCategory(r, category) {
+    if (category !== r.category && (await editRule(r.id, { category }))) await load()
+    editing = null
   }
 </script>
 
@@ -22,8 +27,16 @@
   <div class="row">
     <span class="avatar" style:--hue={look.hue}><Icon name={look.icon} /></span>
     <span class="main"><b>{r.pattern}</b><span class="muted">{r.type === 'in' ? 'Masuk' : r.type === 'out' ? 'Keluar' : 'Transfer'} · {r.category}</span></span>
+    <button class="edit" onclick={() => (editing = editing === r.id ? null : r.id)}>{editing === r.id ? 'Batal' : 'Ubah'}</button>
     <button onclick={() => del(r.id)}>Hapus</button>
   </div>
+  {#if editing === r.id}
+    <div class="chips">
+      {#each s.categories.filter((c) => c.type === r.type) as c}
+        <button class:current={c.name === r.category} onclick={() => setCategory(r, c.name)}>{c.name}</button>
+      {/each}
+    </div>
+  {/if}
 {:else}
   <p class="empty">Belum ada aturan.</p>
 {/each}
@@ -57,5 +70,22 @@
     padding: 6px 12px;
     font-size: 14px;
     color: var(--out);
+  }
+  button.edit {
+    color: inherit;
+  }
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 0 0 12px;
+    border-bottom: 1px solid var(--line);
+  }
+  .chips button {
+    color: inherit;
+  }
+  .chips button.current {
+    font-weight: 600;
+    border-color: currentColor;
   }
 </style>

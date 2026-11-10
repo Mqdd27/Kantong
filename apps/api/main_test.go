@@ -496,3 +496,51 @@ func TestBondPurchaseFlow(t *testing.T) {
 		}
 	}
 }
+
+func TestPatchRule(t *testing.T) {
+	srv := newTestServer(t)
+	var a, b Rule
+	call(t, srv, "POST", "/api/rules", `{"pattern":"MyTelkomsel Apps","type":"out","category":"Lainnya"}`, &a)
+	call(t, srv, "POST", "/api/rules", `{"pattern":"Indomaret","type":"out","category":"Belanja"}`, &b)
+	id := strconv.FormatInt(a.ID, 10)
+
+	// partial update keeps the other fields and the id
+	var got Rule
+	if code := call(t, srv, "PATCH", "/api/rules/"+id, `{"category":"Tagihan"}`, &got); code != 200 ||
+		got.ID != a.ID || got.Pattern != "MyTelkomsel Apps" || got.Type != "out" || got.Category != "Tagihan" {
+		t.Fatalf("patch = %d %+v", code, got)
+	}
+	var rules []Rule
+	call(t, srv, "GET", "/api/rules", "", &rules)
+	if len(rules) != 2 || rules[0].Category != "Tagihan" {
+		t.Fatalf("rules = %+v", rules)
+	}
+
+	// the edited rule is applied to the next email transaction
+	var tx Tx
+	body := `{"amount":45000,"type":"out","category":"Lainnya","merchant":"MyTelkomsel Apps","account":"Jago","source":"email","source_ref":"<tsel@jago>","confidence":0.3}`
+	if code := call(t, srv, "POST", "/api/transactions", body, &tx); code != 201 || tx.Category != "Tagihan" || tx.NeedsReview {
+		t.Fatalf("edited rule not applied: %d %+v", code, tx)
+	}
+
+	for name, c := range map[string]struct {
+		path, body string
+		want       int
+	}{
+		"unknown id":             {"/api/rules/999", `{"category":"Tagihan"}`, 404},
+		"bad id":                 {"/api/rules/abc", `{"category":"Tagihan"}`, 400},
+		"unknown category":       {"/api/rules/" + id, `{"category":"Nope"}`, 400},
+		"category of other type": {"/api/rules/" + id, `{"category":"Gaji"}`, 400},
+		"empty pattern":          {"/api/rules/" + id, `{"pattern":"  "}`, 400},
+		"pattern conflict":       {"/api/rules/" + id, `{"pattern":"indomaret"}`, 409},
+	} {
+		if code := call(t, srv, "PATCH", c.path, c.body, nil); code != c.want {
+			t.Errorf("%s: status %d, want %d", name, code, c.want)
+		}
+	}
+	// a rejected edit leaves the rule untouched
+	call(t, srv, "GET", "/api/rules", "", &rules)
+	if rules[0].Pattern != "MyTelkomsel Apps" || rules[0].Category != "Tagihan" {
+		t.Fatalf("rule changed by a rejected edit: %+v", rules[0])
+	}
+}

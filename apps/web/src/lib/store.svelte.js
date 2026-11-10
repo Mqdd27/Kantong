@@ -242,6 +242,7 @@ export const setBudget = (category, amount) => act('/budget', 'PUT', { month: s.
 
 // ---- rules ----
 export const addRule = (merchant, type, category) => act('/rules', 'POST', { pattern: merchant.trim(), type, category })
+export const editRule = (id, patch) => act(`/rules/${id}`, 'PATCH', patch)
 
 // recurring mask: weekly bit 0 = Minggu … 6 = Sabtu; monthly bit 0 = Jan … 11 = Des
 export const DAYS = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab']
