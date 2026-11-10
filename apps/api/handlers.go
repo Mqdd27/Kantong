@@ -213,6 +213,11 @@ func (a *app) createTx(w http.ResponseWriter, r *http.Request) {
 	if t.Source == "email" { // rules win even if the agent forgot to apply them
 		a.applyRule(&t)
 	}
+	// An email can't tell a move between own accounts from a payment to a person (friend, split bill),
+	// so a transfer without a destination waits in Review instead of silently leaving the books.
+	if t.Source == "email" && t.Type == "transfer" && strings.TrimSpace(t.ToAccount) == "" {
+		t.NeedsReview = true
+	}
 	if !a.validateTx(w, r, &t) {
 		return
 	}

@@ -63,6 +63,7 @@ Email bank/broker ──▶ mailbox (IMAP, read-only)
 - Tahap fetch berjalan tanpa LLM. Email yang `Message-ID`-nya sudah tercatat dilewati lewat `POST /api/source-refs/check`, jadi LLM cuma dibangunkan kalau ada email baru.
 - `source_ref` (Message-ID) bersifat unik, sehingga email yang sama nggak pernah tercatat dua kali.
 - Transaksi dengan `confidence < 0.7` otomatis masuk antrian Review.
+- Transfer dari email tanpa `to_account` juga otomatis masuk Review, karena email tidak bisa membedakan pindah ke rekening sendiri dari kirim uang ke orang lain. Di Review pilih "Ke orang lain" (jadi pengeluaran) atau setujui apa adanya.
 
 Skill agent-nya ([Hermes](https://github.com/NousResearch/hermes-agent)) ada di [`hermes/`](hermes). Cara menyambungkan email bank ke Hermes, dari bikin app password sampai cron, ada di **[docs/hermes-email.md](docs/hermes-email.md)**.
 

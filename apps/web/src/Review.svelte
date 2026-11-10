@@ -10,6 +10,10 @@
   let remember = $state(true)
   const same = (a, b) => a.trim().toLowerCase() === b.trim().toLowerCase()
 
+  // an email can't tell a transfer to your own account from a payment to a person
+  const toPerson = (tx) => updateTx(tx.id, { type: 'out', category: 'Lainnya', to_account: '', needs_review: false })
+  const approve = (tx) => updateTx(tx.id, { needs_review: false })
+
   function pick(tx, category) {
     if (!remember || !tx.merchant?.trim()) return updateTx(tx.id, { category, needs_review: false })
     addRule(tx.merchant, tx.type, category)
@@ -37,13 +41,21 @@
       </span>
       <b class="num">{fmtIDR.format(tx.amount)}</b>
     </button>
-    <div class="chips">
-      {#each s.categories.filter((c) => c.type === tx.type) as c}
-        <button class:current={c.name === tx.category} onclick={() => pick(tx, c.name)}>
-          {c.name}
-        </button>
-      {/each}
-    </div>
+    {#if tx.type === 'transfer'}
+      <p class="hint">Transfer ke siapa? Tap kartu untuk pilih rekening tujuan sendiri.</p>
+      <div class="chips">
+        <button onclick={() => toPerson(tx)}>Ke orang lain (pengeluaran)</button>
+        <button onclick={() => approve(tx)}>Setujui apa adanya</button>
+      </div>
+    {:else}
+      <div class="chips">
+        {#each s.categories.filter((c) => c.type === tx.type) as c}
+          <button class:current={c.name === tx.category} onclick={() => pick(tx, c.name)}>
+            {c.name}
+          </button>
+        {/each}
+      </div>
+    {/if}
   </article>
 {:else}
   <section class="card"><p class="empty">Nggak ada yang perlu direview.</p></section>
