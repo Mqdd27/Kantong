@@ -33,4 +33,11 @@ Config comes from `~/.hermes/.env`: `FINANCE_API_URL`, `FINANCE_API_TOKEN` (same
 | Stock (total) | `kind:"stock"`; `balance`, `invested` |
 | Bank / e-wallet | `balance`; for bank `return_pct` = bunga % per tahun if shown |
 
+## Pitfalls
+- Bond `balance` needs **Total Keuntungan** from the "Detail Portofolio" page (can be negative). The summary card only shows Kupon Berjalan / Kupon Harian, which are NOT the profit: using them gives a wrong balance. Only the card sent → ask for the Detail screenshot, or propose balance = modal and say so.
+- Compare the computed balance with the listed asset before proposing; if identical, report "no change" and write nothing.
+- Coupons already received (cash in the bank) and Kupon Penjual are not added to `balance`.
+- Coupon rate / maturity not on the screenshot: look them up (KSEI or BCA series page), not the yield shown in the app. Monthly-coupon SBN (SR/ORI/ST) → `payout:1`; unknown unit count → say `face` is assumed.
+- Cash moves (e.g. friend swaps balance for cash) change the `Cash`/bank asset balances; check the asset list after any such correction.
+
 Skip anything you cannot read clearly and say which field was unclear. Never store account numbers.

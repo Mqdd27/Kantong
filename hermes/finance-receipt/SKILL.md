@@ -29,3 +29,11 @@ Config from `~/.hermes/.env`: `FINANCE_API_URL`, `FINANCE_API_TOKEN` (same as fi
    `echo '{"occurred_at":"...","amount":25000,"type":"out","category":"Jajan","merchant":"Indomaret","account":"Cash","note":"Aqua, Roti","confidence":0.9}' | python3 ~/.hermes/skills/finance-receipt/scripts/receipt.py post`
    It prints one line (`✓ Keluar Rp25.000 · Jajan · Indomaret · Cash`, `sudah tercatat` for the same receipt sent twice, or `✗ …` with the API error). Reply with that line; if a field was a guess, say which one and that it can be fixed in the app.
 4. Several receipts in one message → post each separately.
+
+## Corrections, shared bills, transfers
+- Bank-email transactions often exist already (source `email`). Before posting or adjusting, `GET /api/transactions` and check for the same amount/time to avoid double entries.
+- Split bill (patungan): the full payment stays as the user's `out`; the friend's share is a separate `in` (category `Refund`, merchant = friend, account = where it was received, note names the items).
+- Swapping balance for cash with a friend: the transfer is `transfer` from the paying account to `Cash` (cash received), and the friend's share is another `in` to `Cash`.
+- Transfers to a friend are NOT own-account transfers: clear `to_account` and `merchant`, set `needs_review:true`. Never take `to_account` from a bank's generic "X to Y" label.
+- Transactions: `PATCH /api/transactions/{id}` works. Rules (`/api/rules`) have only GET/POST/DELETE: to change a rule, DELETE it then POST it again.
+- Category hints: pulsa, paket data, token listrik, internet, air → `Tagihan`. After the user fixes a category in-app, check `/api/rules` matches it (a rule pointing elsewhere re-categorises future ones).
