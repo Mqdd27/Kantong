@@ -544,3 +544,42 @@ func TestPatchRule(t *testing.T) {
 		t.Fatalf("rule changed by a rejected edit: %+v", rules[0])
 	}
 }
+
+func TestEmailTransferWithoutDestinationNeedsReview(t *testing.T) {
+	srv := newTestServer(t)
+	post := func(ref, extra string) Tx {
+		var tx Tx
+		body := `{"occurred_at":"2026-11-10T14:09:00+07:00","amount":17000,"type":"transfer","category":"Transfer","account":"SeaBank",` +
+			extra + `"source":"email","source_ref":"` + ref + `","confidence":1,"needs_review":false}`
+		if code := call(t, srv, "POST", "/api/transactions", body, &tx); code != 201 {
+			t.Fatalf("create %s: %d", ref, code)
+		}
+		return tx
+	}
+	if tx := post("<a@bank>", ""); !tx.NeedsReview {
+		t.Errorf("email transfer without to_account must wait in Review: %+v", tx)
+	}
+	if tx := post("<b@bank>", `"to_account":"  ","merchant":"SeaBank to BCA",`); !tx.NeedsReview {
+		t.Errorf("blank to_account must wait in Review: %+v", tx)
+	}
+	if tx := post("<c@bank>", `"to_account":"BCA",`); tx.NeedsReview {
+		t.Errorf("transfer with a destination is not flagged: %+v", tx)
+	}
+
+	// manual entries and non-transfer emails keep their behaviour
+	var tx Tx
+	call(t, srv, "POST", "/api/transactions", `{"amount":5000,"type":"transfer","category":"Transfer","account":"SeaBank","source":"manual"}`, &tx)
+	if tx.NeedsReview {
+		t.Errorf("manual transfer must not be flagged: %+v", tx)
+	}
+	call(t, srv, "POST", "/api/transactions", `{"amount":5000,"type":"out","category":"Jajan","source":"email","source_ref":"<d@bank>","confidence":1}`, &tx)
+	if tx.NeedsReview {
+		t.Errorf("email expense must not be flagged: %+v", tx)
+	}
+
+	// approving it in Review clears the flag and it stays cleared
+	flagged := post("<e@bank>", "")
+	if code := call(t, srv, "PATCH", "/api/transactions/"+strconv.FormatInt(flagged.ID, 10), `{"needs_review":false}`, &tx); code != 200 || tx.NeedsReview {
+		t.Fatalf("approve: %d %+v", code, tx)
+	}
+}
