@@ -114,7 +114,7 @@ Semua endpoint `/api/*` butuh `Authorization: Bearer $API_TOKEN` atau cookie ses
 | `POST /api/source-refs/check` | Message-ID mana yang belum tercatat |
 | `GET /api/summary?month=` | Total masuk/keluar per kategori |
 | `GET /api/categories` | Kategori |
-| `GET/POST /api/rules`, `DELETE /api/rules/{id}` | Aturan merchant → kategori. Dicek otomatis untuk setiap transaksi `source=email` (cocok kalau merchant mengandung `pattern`, tanpa beda huruf besar/kecil; pattern terpanjang menang). POST dengan pattern yang sama menimpa aturan lama |
+| `GET/POST /api/rules`, `PATCH/DELETE /api/rules/{id}` | Aturan merchant → kategori. Dicek otomatis untuk setiap transaksi `source=email` (cocok kalau merchant mengandung `pattern`, tanpa beda huruf besar/kecil; pattern terpanjang menang). POST dengan pattern yang sama menimpa aturan lama. PATCH mengubah `pattern`, `type`, atau `category` tanpa mengganti id (409 kalau pattern bentrok dengan aturan lain) |
 | `GET/PUT /api/budget` | Budget bulan ini vs pengeluaran + tagihan mendatang |
 | `GET/POST/PATCH/DELETE /api/recurring`, `POST /api/recurring/{id}/advance` | Transaksi berulang (`?skip=1` untuk lewati) |
 | `GET/POST/PATCH/DELETE /api/assets`, `GET /api/assets/history`, `GET /api/assets/{id}/activity` | Aset, total kekayaan, riwayat harian, transaksi & order per aset |

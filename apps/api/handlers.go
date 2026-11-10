@@ -506,6 +506,60 @@ func (a *app) createRule(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, ru)
 }
 
+// patchRule edits a rule in place, so changing its category no longer needs delete + create.
+func (a *app) patchRule(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	var p struct {
+		Pattern  *string `json:"pattern"`
+		Type     *string `json:"type"`
+		Category *string `json:"category"`
+	}
+	if !decode(w, r, &p) {
+		return
+	}
+	var ru Rule
+	err := a.db.QueryRow(`SELECT id, pattern, match, type, category FROM rules WHERE id = ?`, id).
+		Scan(&ru.ID, &ru.Pattern, &ru.Match, &ru.Type, &ru.Category)
+	if errors.Is(err, sql.ErrNoRows) {
+		writeErr(w, http.StatusNotFound, "not found")
+		return
+	} else if err != nil {
+		a.fail(w, err)
+		return
+	}
+	if p.Pattern != nil {
+		ru.Pattern = strings.TrimSpace(*p.Pattern)
+	}
+	if p.Type != nil {
+		ru.Type = *p.Type
+	}
+	if p.Category != nil {
+		ru.Category = *p.Category
+	}
+	switch {
+	case ru.Pattern == "":
+		writeErr(w, http.StatusBadRequest, "pattern is required")
+		return
+	case !validType(ru.Type) || !a.categoryExists(ru.Category, ru.Type):
+		writeErr(w, http.StatusBadRequest, "unknown type/category, see /api/categories")
+		return
+	}
+	// one rule per pattern: renaming onto another rule's pattern is a conflict, not a silent overwrite
+	var other int64
+	if err := a.db.QueryRow(`SELECT id FROM rules WHERE lower(pattern) = lower(?) AND id != ?`, ru.Pattern, id).Scan(&other); err == nil {
+		writeJSON(w, http.StatusConflict, map[string]any{"error": "another rule already uses this pattern", "id": other})
+		return
+	}
+	if _, err := a.db.Exec(`UPDATE rules SET pattern = ?, type = ?, category = ? WHERE id = ?`, ru.Pattern, ru.Type, ru.Category, id); err != nil {
+		a.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, ru)
+}
+
 func (a *app) deleteRule(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(w, r)
 	if !ok {
