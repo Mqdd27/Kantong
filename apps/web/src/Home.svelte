@@ -27,13 +27,15 @@
   // savings rate as Analitik counts it: Investasi is saving, not spending
   const spend = $derived(outSum - (byCat.find(([c]) => c === 'Investasi')?.[1] ?? 0))
   const rate = $derived(inSum ? Math.round(((inSum - spend) / inSum) * 100) : null)
+  // before payday the rate is meaningless (e.g. -300%), so show spending instead
+  const paid = $derived(s.txs.some((t) => t.type === 'in' && t.category === 'Gaji'))
 </script>
 
 <PageHead title="Beranda" />
 <MonthBar />
 
-<div class="cols">
-  <div class="stack">
+<div class="home">
+  <div class="stack a">
     <section class="balance">
       <BudgetCard compact hero />
       <div class="flow">
@@ -53,11 +55,18 @@
       </a>
       <a class="card tile" href="#/analytics">
         <span class="avatar sm" style:--hue="var(--h-teal)"><Icon name="chart" size={18} /></span>
-        <span class="lbl">Tabungan bulan ini</span>
-        <b class="num">{rate == null ? '–' : rate + '%'}</b>
+        {#if paid}
+          <span class="lbl">Tabungan bulan ini</span>
+          <b class="num">{rate == null ? '–' : rate + '%'}</b>
+        {:else}
+          <span class="lbl">Keluar bulan ini</span>
+          <b class="num">{fmtIDR.format(spend)}</b>
+        {/if}
       </a>
     </div>
+  </div>
 
+  <div class="stack c">
     <div class="sec"><h2>Pengeluaran per kategori</h2><a href="#/analytics">Analitik</a></div>
     <section class="card">
       {#if byCat.length}
@@ -79,7 +88,7 @@
     </section>
   </div>
 
-  <div class="stack">
+  <div class="stack b">
     <div class="sec"><h2>Transaksi terbaru</h2><a href="#/tx">Lihat semua</a></div>
     <section class="card list">
       {#each s.txs.slice(0, 10) as tx (tx.id)}
@@ -92,15 +101,31 @@
 </div>
 
 <style>
-  .cols {
+  /* phone: balance, recent, categories; desktop: balance + categories left, recent right */
+  .home {
     display: grid;
     gap: 12px;
   }
+  .home > * {
+    min-width: 0;
+  }
   @media (min-width: 900px) {
-    .cols {
-      gap: 24px;
+    .home {
+      grid-template-columns: 1fr 1fr;
+      grid-template-areas: 'a b' 'c b';
+      align-items: start;
+      gap: 12px 24px;
     }
-    .cols > .stack:last-child .sec {
+    .a {
+      grid-area: a;
+    }
+    .b {
+      grid-area: b;
+    }
+    .c {
+      grid-area: c;
+    }
+    .b .sec {
       margin-top: 0;
     }
   }
@@ -115,7 +140,8 @@
   }
   .flow {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(3, auto);
+    justify-content: space-between;
     gap: 8px;
     padding-top: 14px;
     border-top: 1px solid var(--hero-track);
@@ -130,9 +156,7 @@
     font-size: 12px;
   }
   .flow b {
-    font-size: 14px;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    font-size: clamp(12px, 3.6vw, 14px);
   }
   .tiles {
     display: grid;
@@ -154,9 +178,7 @@
     font-size: 13px;
   }
   .tile b {
-    font-size: 17px;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    font-size: clamp(15px, 4.4vw, 17px);
   }
   .bars {
     list-style: none;

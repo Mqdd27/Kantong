@@ -105,7 +105,8 @@
   }
   .summary {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(3, auto);
+    justify-content: space-between;
     gap: 8px;
   }
   .summary div {
@@ -118,9 +119,7 @@
     font-size: 12px;
   }
   .summary b {
-    font-size: 14px;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    font-size: clamp(12px, 3.6vw, 14px);
   }
   .hits {
     margin: -4px 0 0;
