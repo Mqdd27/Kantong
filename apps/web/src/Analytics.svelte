@@ -5,7 +5,8 @@
   import PageHead from './PageHead.svelte'
   import Icon from './Icon.svelte'
 
-  const N = 6
+  const RANGES = [3, 6, 12] // months shown; the AI card uses the same range
+  let N = $state(6)
   const SAVING = new Set(['Investasi']) // out-categories that are saving, not spending
   const compactRaw = new Intl.NumberFormat('id-ID', { notation: 'compact', maximumFractionDigits: 1 })
   const compact = { format: (n) => mask(compactRaw.format(n)) }
@@ -36,26 +37,28 @@
   })
 
   // "Pendapat AI": on demand (a Hermes turn is slow and costs tokens); cached per month while the page is open
-  let insights = $state({}) // month -> text
+  let insights = $state({}) // `${month}|${months}` -> text
   let insightBusy = $state(false)
   let insightErr = $state('')
-  const insight = $derived(insights[s.month])
+  const insightKey = $derived(`${s.month}|${N}`)
+  const insight = $derived(insights[insightKey])
   async function askInsight() {
+    const key = insightKey
     const month = s.month
     insightBusy = true
     insightErr = ''
     try {
       const r = await api('/insight', { method: 'POST', body: { month, months: N } })
-      insights[month] = r.text
+      insights[key] = r.text
     } catch (e) {
       insightErr = e.message
     } finally {
       insightBusy = false
     }
   }
-  // changing month clears the error, and the cache is keyed by month, so the card starts empty again
+  // changing month or range clears the error, and the cache is keyed by both, so the card starts empty again
   $effect(() => {
-    s.month
+    insightKey
     insightErr = ''
   })
 
@@ -98,32 +101,20 @@
 </script>
 
 <PageHead title="Analitik" />
-<p class="range muted">{months.length ? `${fmtMonth(months[0].month)} – ${fmtMonth(s.month)}` : ''}</p>
+<div class="rangebar">
+  <p class="range muted">{months.length ? `${fmtMonth(months[0].month)} – ${fmtMonth(s.month)}` : ''}</p>
+  <div class="seg" role="group" aria-label="Rentang waktu">
+    {#each RANGES as r}
+      <button type="button" aria-pressed={N === r} onclick={() => (N = r)}>{r} bln</button>
+    {/each}
+  </div>
+</div>
 
 <section class="card tiles">
   <div><span>Rata-rata pengeluaran / bulan</span><b>{fmtIDR.format(avgSpend)}</b></div>
   <div><span>Rata-rata tingkat tabungan</span><b>{avgRate == null ? '–' : Math.round(avgRate * 100) + '%'}</b></div>
   <div><span>Diinvestasikan ({N} bln)</span><b>{fmtIDR.format(months.reduce((n, m) => n + m.save, 0))}</b></div>
 </section>
-
-{#if s.chat}
-  <section class="card insight">
-    <h3>Pendapat AI</h3>
-    {#if insight && view.hide}
-      <p class="muted">Teks disembunyikan karena nominal disembunyikan. Tap ikon mata untuk menampilkan.</p>
-    {:else if insight}
-      <p class="text">{insight}</p>
-    {:else if insightBusy}
-      <p class="muted" role="status">AI sedang membaca datamu…</p>
-    {:else}
-      <p class="muted">Komentar singkat soal angka {fmtMonth(months[0]?.month ?? s.month)} – {fmtMonth(s.month)}.</p>
-    {/if}
-    {#if insightErr}<p class="err" role="alert">{insightErr}</p>{/if}
-    {#if !insightBusy}
-      <button onclick={askInsight}>{insightErr ? 'Ulangi' : insight ? 'Minta lagi' : 'Minta pendapat AI'}</button>
-    {/if}
-  </section>
-{/if}
 
 <div class="cols">
   <section class="card">
@@ -207,9 +198,42 @@
   </section>
 </div>
 
+{#if s.chat}
+  <section class="card insight">
+    <h3>Pendapat AI</h3>
+    {#if insight && view.hide}
+      <p class="muted">Teks disembunyikan karena nominal disembunyikan. Tap ikon mata untuk menampilkan.</p>
+    {:else if insight}
+      <p class="text">{insight}</p>
+    {:else if insightBusy}
+      <p class="muted" role="status">AI sedang membaca datamu…</p>
+    {:else}
+      <p class="muted">Komentar singkat soal angka {fmtMonth(months[0]?.month ?? s.month)} – {fmtMonth(s.month)}.</p>
+    {/if}
+    {#if insightErr}<p class="err" role="alert">{insightErr}</p>{/if}
+    {#if !insightBusy}
+      <button onclick={askInsight}>{insightErr ? 'Ulangi' : insight ? 'Minta lagi' : 'Minta pendapat AI'}</button>
+    {/if}
+  </section>
+{/if}
+
 <style>
-  .range {
+  .rangebar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
     margin: -8px 0 12px;
+  }
+  .range {
+    margin: 0;
+  }
+  .rangebar .seg {
+    flex: none;
+  }
+  .rangebar .seg button {
+    padding: 6px 12px;
+    font-size: 13px;
   }
   .muted {
     color: var(--muted);
@@ -239,7 +263,7 @@
     overflow-wrap: anywhere;
   }
   .insight {
-    margin-bottom: 12px;
+    margin-top: 12px;
   }
   .insight h3 {
     margin-bottom: 8px;
@@ -250,6 +274,7 @@
   .insight .text {
     white-space: pre-wrap;
     overflow-wrap: anywhere;
+    text-align: justify;
     line-height: 1.5;
   }
   .insight .err {
