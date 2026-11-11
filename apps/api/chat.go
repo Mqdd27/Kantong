@@ -175,7 +175,7 @@ Sekarang: %s WIB.`, now.Format("2006-01-02 15:04 (Monday)"))}}
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+a.cfg.hermesKey)
-	req.Header.Set("X-Hermes-Session-Id", "kantong-web") // one ongoing conversation, like the visible history
+	// no X-Hermes-Session-Id: history is replayed above, and a shared session lets one stuck turn block every later one
 
 	res, err := hermesClient.Do(req)
 	if err != nil {

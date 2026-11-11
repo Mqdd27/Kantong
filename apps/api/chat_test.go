@@ -23,7 +23,7 @@ func TestChatOffByDefault(t *testing.T) {
 func TestChatViaHermes(t *testing.T) {
 	var seen []map[string]any
 	hermes := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v1/chat/completions" || r.Header.Get("Authorization") != "Bearer hk" || r.Header.Get("X-Hermes-Session-Id") == "" {
+		if r.URL.Path != "/v1/chat/completions" || r.Header.Get("Authorization") != "Bearer hk" {
 			t.Errorf("bad request: %s auth=%q", r.URL.Path, r.Header.Get("Authorization"))
 		}
 		var body map[string]any
