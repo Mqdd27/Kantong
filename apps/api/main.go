@@ -185,7 +185,8 @@ func (a *app) routes() http.Handler {
 	api.HandleFunc("PATCH /api/orders/{ref}", a.patchOrder)
 	api.HandleFunc("GET /api/chat", a.getChat)
 	api.HandleFunc("POST /api/chat", a.postChat)
-	api.HandleFunc("DELETE /api/chat", a.clearChat)
+	api.HandleFunc("GET /api/chat/{id}", a.getChatSession)
+	api.HandleFunc("DELETE /api/chat/{id}", a.deleteChatSession)
 	api.HandleFunc("GET /api/fx", func(w http.ResponseWriter, r *http.Request) {
 		c, ok := normCurrency(r.URL.Query().Get("currency"))
 		if !ok {

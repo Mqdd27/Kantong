@@ -6,6 +6,8 @@
   import Icon from './Icon.svelte'
 
   let messages = $state([])
+  let sessions = $state([])
+  let current = $state(0) // 0 = new chat, created on the first message
   let models = $state([])
   let model = $state('')
   try { model = localStorage.chatModel || '' } catch {}
@@ -17,12 +19,22 @@
   const scroll = () => tick().then(() => end?.scrollIntoView({ block: 'end' }))
   api('/chat')
     .then((r) => {
-      messages = r.messages ?? []
+      sessions = r.sessions ?? []
       models = r.models ?? []
       if (!models.includes(model)) model = models[0] ?? ''
-      scroll()
+      let last = 0
+      try { last = +localStorage.chatSession || 0 } catch {}
+      open(sessions.some((c) => c.id === last) ? last : (sessions[0]?.id ?? 0))
     })
     .catch((e) => (error = e.message))
+
+  async function open(id) {
+    current = id
+    error = ''
+    try { localStorage.chatSession = id } catch {}
+    messages = id ? ((await api(`/chat/${id}`).catch((e) => ((error = e.message), {}))).messages ?? []) : []
+    scroll()
+  }
 
   async function send(e) {
     e.preventDefault()
@@ -34,8 +46,13 @@
     text = ''
     scroll()
     try {
-      const r = await api('/chat', { method: 'POST', body: { text: q, model } })
+      const r = await api('/chat', { method: 'POST', body: { text: q, model, session_id: current } })
       messages.splice(-1, 1, ...r.messages)
+      sessions = [r.session, ...sessions.filter((c) => c.id !== r.session.id)]
+      if (!current) {
+        current = r.session.id
+        try { localStorage.chatSession = current } catch {}
+      }
     } catch (err) {
       messages.pop()
       text = q
@@ -45,8 +62,10 @@
     scroll()
   }
 
-  async function clear() {
-    if (await act('/chat', 'DELETE')) messages = []
+  async function remove() {
+    if (!(await act(`/chat/${current}`, 'DELETE'))) return
+    sessions = sessions.filter((c) => c.id !== current)
+    open(0)
   }
   function pick() {
     try { localStorage.chatModel = model } catch {}
@@ -59,9 +78,17 @@
   const keydown = (e) => e.key === 'Enter' && !e.shiftKey && !e.isComposing && send(e)
 </script>
 
-<PageHead title="Asisten" />
+<PageHead title="Asisten">
+  <button class="icon" aria-label="Chat baru" disabled={busy} onclick={() => open(0)}><Icon name="plus" /></button>
+</PageHead>
 
-<p class="muted intro">Dijawab oleh Hermes. Memorinya sama dengan Hermes di Telegram.</p>
+{#if sessions.length}
+  <select class="sessions" value={current} disabled={busy} onchange={(e) => open(+e.currentTarget.value)} aria-label="Pilih chat">
+    <option value={0}>Chat baru</option>
+    {#each sessions as c (c.id)}<option value={c.id}>{c.title}</option>{/each}
+  </select>
+{/if}
+<p class="muted intro">Dijawab oleh Hermes. Tiap chat punya konteks sendiri.</p>
 
 <section class="log" aria-live="polite">
   {#each messages as m (m.id)}
@@ -92,7 +119,7 @@
   <textarea bind:value={text} onkeydown={keydown} rows="1" placeholder="Tulis pertanyaan…" aria-label="Pertanyaan" maxlength="4000"></textarea>
   <button class="primary" disabled={busy || !text.trim()} aria-label="Kirim"><Icon name="send" /></button>
 </form>
-{#if messages.length}<button class="clear" onclick={clear}>Hapus riwayat chat</button>{/if}
+{#if current}<button class="clear" disabled={busy} onclick={remove}>Hapus chat ini</button>{/if}
 
 <style>
   .muted {
@@ -101,6 +128,17 @@
   }
   .intro {
     margin: -4px 0 12px;
+  }
+  .sessions {
+    width: 100%;
+    margin-bottom: 8px;
+    padding: 10px 12px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--surface);
+    color: var(--text);
+    font: inherit;
+    font-size: 15px;
   }
   .clear {
     border: 0;
@@ -195,7 +233,7 @@
       bottom: 16px;
     }
   }
-  select {
+  .ask select {
     grid-column: 1 / -1;
     justify-self: start;
     border: 0;

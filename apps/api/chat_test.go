@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -41,11 +42,23 @@ func TestChatViaHermes(t *testing.T) {
 	srv := httptest.NewServer(a.routes())
 	defer func() { srv.Close(); a.db.Close() }()
 
-	if code := call(t, srv, "POST", "/api/chat", `{"text":"bulan ini gimana?"}`, nil); code != 200 {
-		t.Fatalf("first POST = %d", code)
+	var first struct{ Session chatSession }
+	if code := call(t, srv, "POST", "/api/chat", `{"text":"bulan ini gimana?"}`, &first); code != 200 || first.Session.Title != "bulan ini gimana?" {
+		t.Fatalf("first POST = %d %+v", code, first)
 	}
-	if code := call(t, srv, "POST", "/api/chat", `{"text":"lalu?","model":"9router:cx/gpt-5.5"}`, nil); code != 200 {
+	sid := strconv.FormatInt(first.Session.ID, 10)
+	if code := call(t, srv, "POST", "/api/chat", `{"text":"lalu?","model":"9router:cx/gpt-5.5","session_id":`+sid+`}`, nil); code != 200 {
 		t.Fatalf("second POST = %d", code)
+	}
+	// a new session starts with no history from the first one
+	if code := call(t, srv, "POST", "/api/chat", `{"text":"topik lain"}`, nil); code != 200 {
+		t.Fatalf("new session POST = %d", code)
+	}
+	if n := len(seen[2]["messages"].([]any)); n != 2 { // system + new only
+		t.Fatalf("new session carried %d messages, want 2", n)
+	}
+	if code := call(t, srv, "POST", "/api/chat", `{"text":"x","session_id":999}`, nil); code != 404 {
+		t.Fatalf("missing session = %d, want 404", code)
 	}
 	if code := call(t, srv, "POST", "/api/chat", `{"text":"x","model":"evil:model"}`, nil); code != 400 {
 		t.Fatalf("unknown model = %d, want 400", code)
@@ -56,13 +69,25 @@ func TestChatViaHermes(t *testing.T) {
 	if n := len(seen[1]["messages"].([]any)); n != 4 { // system + 2 history + new
 		t.Fatalf("second request carried %d messages, want 4", n)
 	}
-	var got struct {
+	var list struct {
 		Enabled  bool
-		Messages []chatMsg
+		Sessions []chatSession
 		Models   []string
 	}
-	call(t, srv, "GET", "/api/chat", "", &got)
-	if !got.Enabled || len(got.Messages) != 4 || got.Messages[3].Model != "9router:cx/gpt-5.5" || len(got.Models) != 2 {
-		t.Fatalf("after chat: %+v", got)
+	call(t, srv, "GET", "/api/chat", "", &list)
+	if !list.Enabled || len(list.Sessions) != 2 || len(list.Models) != 2 {
+		t.Fatalf("session list: %+v", list)
+	}
+	var got struct{ Messages []chatMsg }
+	call(t, srv, "GET", "/api/chat/"+sid, "", &got)
+	if len(got.Messages) != 4 || got.Messages[3].Model != "9router:cx/gpt-5.5" {
+		t.Fatalf("session messages: %+v", got)
+	}
+	if code := call(t, srv, "DELETE", "/api/chat/"+sid, "", nil); code != 204 {
+		t.Fatalf("DELETE = %d", code)
+	}
+	call(t, srv, "GET", "/api/chat/"+sid, "", &got)
+	if len(got.Messages) != 0 {
+		t.Fatalf("messages survived delete: %d", len(got.Messages))
 	}
 }
