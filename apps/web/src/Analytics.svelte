@@ -116,25 +116,6 @@
   <div><span>Diinvestasikan ({N} bln)</span><b>{fmtIDR.format(months.reduce((n, m) => n + m.save, 0))}</b></div>
 </section>
 
-{#if s.chat}
-  <section class="card insight">
-    <h3>Pendapat AI</h3>
-    {#if insight && view.hide}
-      <p class="muted">Teks disembunyikan karena nominal disembunyikan. Tap ikon mata untuk menampilkan.</p>
-    {:else if insight}
-      <p class="text">{insight}</p>
-    {:else if insightBusy}
-      <p class="muted" role="status">AI sedang membaca datamu…</p>
-    {:else}
-      <p class="muted">Komentar singkat soal angka {fmtMonth(months[0]?.month ?? s.month)} – {fmtMonth(s.month)}.</p>
-    {/if}
-    {#if insightErr}<p class="err" role="alert">{insightErr}</p>{/if}
-    {#if !insightBusy}
-      <button onclick={askInsight}>{insightErr ? 'Ulangi' : insight ? 'Minta lagi' : 'Minta pendapat AI'}</button>
-    {/if}
-  </section>
-{/if}
-
 <div class="cols">
   <section class="card">
     <h3>Pemasukan vs pengeluaran</h3>
@@ -217,6 +198,25 @@
   </section>
 </div>
 
+{#if s.chat}
+  <section class="card insight">
+    <h3>Pendapat AI</h3>
+    {#if insight && view.hide}
+      <p class="muted">Teks disembunyikan karena nominal disembunyikan. Tap ikon mata untuk menampilkan.</p>
+    {:else if insight}
+      <p class="text">{insight}</p>
+    {:else if insightBusy}
+      <p class="muted" role="status">AI sedang membaca datamu…</p>
+    {:else}
+      <p class="muted">Komentar singkat soal angka {fmtMonth(months[0]?.month ?? s.month)} – {fmtMonth(s.month)}.</p>
+    {/if}
+    {#if insightErr}<p class="err" role="alert">{insightErr}</p>{/if}
+    {#if !insightBusy}
+      <button onclick={askInsight}>{insightErr ? 'Ulangi' : insight ? 'Minta lagi' : 'Minta pendapat AI'}</button>
+    {/if}
+  </section>
+{/if}
+
 <style>
   .rangebar {
     display: flex;
@@ -263,7 +263,7 @@
     overflow-wrap: anywhere;
   }
   .insight {
-    margin-bottom: 12px;
+    margin-top: 12px;
   }
   .insight h3 {
     margin-bottom: 8px;
