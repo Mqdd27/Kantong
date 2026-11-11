@@ -31,7 +31,9 @@
   const paid = $derived(s.txs.some((t) => t.type === 'in' && t.category === 'Gaji'))
 </script>
 
-<PageHead title="Beranda" />
+<PageHead title="Beranda">
+  {#if s.chat}<a class="icon" href="#/chat" aria-label="Tanya asisten"><Icon name="chat" /></a>{/if}
+</PageHead>
 <MonthBar />
 
 <div class="home">

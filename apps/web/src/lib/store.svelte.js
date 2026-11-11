@@ -37,6 +37,7 @@ export const s = $state({
   history: [],
   budget: null,
   recurring: [],
+  chat: false, // AI assistant: on only when the server has HERMES_API_URL
 })
 
 const byNewest = (a, b) => (a.occurred_at < b.occurred_at ? 1 : a.occurred_at > b.occurred_at ? -1 : b.id - a.id)

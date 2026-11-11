@@ -12,6 +12,8 @@
   import Rules from './Rules.svelte'
   import Calendar from './Calendar.svelte'
   import TxSheet from './TxSheet.svelte'
+  import Chat from './Chat.svelte'
+  import { api } from './lib/api.js'
 
   let route = $state(location.hash.slice(1) || '/')
   addEventListener('hashchange', () => (route = location.hash.slice(1) || '/'))
@@ -23,11 +25,15 @@
   const reviewCount = $derived(s.txs.filter((t) => t.needs_review).length)
 
   $effect(() => {
-    if (s.authed) untrack(() => { load(); connect() })
+    if (s.authed) untrack(() => {
+      load()
+      connect()
+      api('/chat').then((r) => (s.chat = r.enabled)).catch(() => {})
+    })
   })
 
   // which tab lights up for routes that live under another one
-  const PARENT = { '/calendar': '/tx', '/review': '/tx', '/rules': '/tx', '/analytics': '/' }
+  const PARENT = { '/calendar': '/tx', '/review': '/tx', '/rules': '/tx', '/analytics': '/', '/chat': '/' }
   const here = $derived(PARENT[route] ?? route)
 
   // phone: four tabs around the add button; the rest is reached from these pages
@@ -42,7 +48,7 @@
     ['/analytics', 'Analitik', 'chart'],
     ['/assets', 'Aset', 'wallet'],
   ]
-  const more = [['/review', 'Review', 'inbox'], ['/rules', 'Aturan kategori', 'tag']]
+  const more = $derived([...(s.chat ? [['/chat', 'Asisten', 'chat']] : []), ['/review', 'Review', 'inbox'], ['/rules', 'Aturan kategori', 'tag']])
 </script>
 
 {#if !s.authed}
@@ -68,7 +74,7 @@
     </nav>
   </aside>
 
-  <main class:narrow={route === '/tx' || route === '/review' || route === '/rules' || route === '/calendar'}>
+  <main class:narrow={route === '/tx' || route === '/review' || route === '/rules' || route === '/calendar' || route === '/chat'}>
     {#if route === '/tx'}
       <TxList {open} />
     {:else if route === '/review'}
@@ -83,6 +89,8 @@
       <Calendar {open} />
     {:else if route === '/rules'}
       <Rules />
+    {:else if route === '/chat' && s.chat}
+      <Chat />
     {:else}
       <Home {open} />
     {/if}
