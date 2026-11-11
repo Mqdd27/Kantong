@@ -1,5 +1,5 @@
 <script>
-  import { s, fmtIDR, fmtMonth, shiftMonth, mask } from './lib/store.svelte.js'
+  import { s, view, fmtIDR, fmtMonth, shiftMonth, mask } from './lib/store.svelte.js'
   import { api } from './lib/api.js'
   import { catLook } from './lib/look.js'
   import PageHead from './PageHead.svelte'
@@ -33,6 +33,30 @@
         })
       })
       .catch(() => {})
+  })
+
+  // "Pendapat AI": on demand (a Hermes turn is slow and costs tokens); cached per month while the page is open
+  let insights = $state({}) // month -> text
+  let insightBusy = $state(false)
+  let insightErr = $state('')
+  const insight = $derived(insights[s.month])
+  async function askInsight() {
+    const month = s.month
+    insightBusy = true
+    insightErr = ''
+    try {
+      const r = await api('/insight', { method: 'POST', body: { month, months: N } })
+      insights[month] = r.text
+    } catch (e) {
+      insightErr = e.message
+    } finally {
+      insightBusy = false
+    }
+  }
+  // changing month clears the error, and the cache is keyed by month, so the card starts empty again
+  $effect(() => {
+    s.month
+    insightErr = ''
   })
 
   const rate = (m) => (m.in ? (m.in - m.spend) / m.in : null)
@@ -81,6 +105,25 @@
   <div><span>Rata-rata tingkat tabungan</span><b>{avgRate == null ? '–' : Math.round(avgRate * 100) + '%'}</b></div>
   <div><span>Diinvestasikan ({N} bln)</span><b>{fmtIDR.format(months.reduce((n, m) => n + m.save, 0))}</b></div>
 </section>
+
+{#if s.chat}
+  <section class="card insight">
+    <h3>Pendapat AI</h3>
+    {#if insight && view.hide}
+      <p class="muted">Teks disembunyikan karena nominal disembunyikan. Tap ikon mata untuk menampilkan.</p>
+    {:else if insight}
+      <p class="text">{insight}</p>
+    {:else if insightBusy}
+      <p class="muted" role="status">AI sedang membaca datamu…</p>
+    {:else}
+      <p class="muted">Komentar singkat soal angka {fmtMonth(months[0]?.month ?? s.month)} – {fmtMonth(s.month)}.</p>
+    {/if}
+    {#if insightErr}<p class="err" role="alert">{insightErr}</p>{/if}
+    {#if !insightBusy}
+      <button onclick={askInsight}>{insightErr ? 'Ulangi' : insight ? 'Minta lagi' : 'Minta pendapat AI'}</button>
+    {/if}
+  </section>
+{/if}
 
 <div class="cols">
   <section class="card">
@@ -194,6 +237,24 @@
     font-size: 15px;
     font-variant-numeric: tabular-nums;
     overflow-wrap: anywhere;
+  }
+  .insight {
+    margin-bottom: 12px;
+  }
+  .insight h3 {
+    margin-bottom: 8px;
+  }
+  .insight p {
+    margin: 0 0 10px;
+  }
+  .insight .text {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    line-height: 1.5;
+  }
+  .insight .err {
+    color: var(--out);
+    font-size: 14px;
   }
   .cols {
     display: grid;
