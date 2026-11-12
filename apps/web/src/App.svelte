@@ -76,7 +76,7 @@
 
   <main class:narrow={route === '/tx' || route === '/review' || route === '/rules' || route === '/calendar' || route === '/chat'}>
     {#if import.meta.env.MODE === 'demo'}
-      <p class="demo">Demo dengan data contoh. Perubahan hilang saat halaman dimuat ulang. <a href="../">Dokumentasi</a></p>
+      <p class="demo">Demo dengan data contoh. Perubahan hilang saat halaman dimuat ulang. <a href="https://github.com/Mqdd27/Kantong">Dokumentasi</a></p>
     {/if}
     {#if route === '/tx'}
       <TxList {open} />

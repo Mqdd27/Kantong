@@ -6,7 +6,7 @@ Money manager pribadi yang self-hosted. Notifikasi transaksi dari email bank/bro
 
 Satu binary Go (API + SQLite + SSE + PWA Svelte yang di-embed), image Docker ±22 MB, RAM idle ±3 MB.
 
-**[Coba demo →](https://mqdd27.github.io/Kantong/demo/)** (data contoh, jalan di browser tanpa server) · [Dokumentasi](https://mqdd27.github.io/Kantong/)
+**[Coba demo →](https://mqdd27.github.io/Kantong/)** (data contoh, jalan di browser tanpa server)
 
 > 🤖 **Setup pakai AI agent:** kasih [docs/AGENT-SETUP.md](docs/AGENT-SETUP.md) ke Claude Code, Codex, atau agent lain. Agent-nya bakal setup dari server kosong sampai email bank + Hermes jalan. Contoh prompt:
 >

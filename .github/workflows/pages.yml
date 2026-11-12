@@ -1,4 +1,4 @@
-# GitHub Pages: README + docs/ as the docs site (Jekyll), the PWA with sample data at /demo/.
+# GitHub Pages: the PWA with sample data (mock API, no server).
 # Demo data is committed (apps/web/demo/data.json); regenerate with `node apps/web/demo/snapshot.mjs`.
 name: pages
 
@@ -28,20 +28,10 @@ jobs:
       - run: npm ci
       - run: npx vite build --mode demo
         working-directory: apps/web
-      - name: Assemble site
-        run: |
-          mkdir -p site/demo/api
-          cp -r apps/web/demo/dist/. site/demo/
-          cp apps/web/demo/export.xlsx site/demo/api/
-          cp -r docs site/docs
-          cp README.md .github/pages/_config.yml site/
-          # links into code folders only exist on GitHub, not on the site
-          sed -i -E 's#\]\((\.\./)?(hermes|apps)(/[^)]*)?\)#](https://github.com/${{ github.repository }}/tree/main/\2\3)#g' site/README.md site/docs/*.md
-      - uses: actions/jekyll-build-pages@v1
-        with:
-          source: site
-          destination: _site
+      - run: mkdir -p apps/web/demo/dist/api && cp apps/web/demo/export.xlsx apps/web/demo/dist/api/
       - uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps/web/demo/dist
 
   deploy:
     needs: build
