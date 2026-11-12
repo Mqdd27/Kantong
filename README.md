@@ -68,10 +68,10 @@ Email bank/broker ──▶ mailbox (IMAP, read-only)
 
 Skill agent-nya ([Hermes](https://github.com/NousResearch/hermes-agent)) ada di [`hermes/`](hermes). Cara menyambungkan email bank ke Hermes, dari bikin app password sampai cron, ada di **[docs/hermes-email.md](docs/hermes-email.md)**.
 
-<figure>
-    <p align="center"><img src="docs/screenshots/telegram-asset.jpg" width="300" alt="Kirim screenshot portofolio ke Hermes di Telegram untuk update aset" /></p>
-    <figcaption align="center"> Pencatatan Asset (keluar/masuk/revisi) dapat dilakukan secara langsung lewat telegram</figcaption>
-</figure>
+<p align="center">
+  <img src="docs/screenshots/telegram-asset.jpg" width="300" alt="Kirim screenshot portofolio ke Hermes di Telegram untuk update aset" /><br />
+  <sub>Pencatatan Asset (keluar/masuk/revisi) dapat dilakukan secara langsung lewat telegram</sub>
+</p>
 
 Skill kedua, [`hermes/finance-assets`](hermes/finance-assets), mengisi aset dari screenshot portofolio yang kamu kirim ke Hermes di Telegram. Panduannya ada di **[docs/hermes-assets.md](docs/hermes-assets.md)**. Skill ketiga, [`hermes/finance-receipt`](hermes/finance-receipt), mencatat transaksi dari foto struk belanja: **[docs/hermes-receipt.md](docs/hermes-receipt.md)**.
 
