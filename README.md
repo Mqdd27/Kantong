@@ -36,7 +36,7 @@ Satu binary Go (API + SQLite + SSE + PWA Svelte yang di-embed), image Docker ±2
 - **Review & aturan**: transaksi hasil parsing email yang kurang yakin ditandai untuk dicek sekali tap. Selama ada yang perlu direview, kartu kuning muncul di Beranda dan Transaksi (di desktop juga ada angka di sidebar). Daftar aturan dibuka dari ikon label di header Transaksi. Koreksi kategori bisa disimpan jadi aturan ("selalu kategorikan Gojek sebagai Transport"), dan email berikutnya dari merchant itu langsung masuk dengan kategori yang benar.
 - **Foto struk → transaksi**: kirim foto struk ke Hermes di Telegram, transaksi keluarnya langsung tercatat.
 - **Notifikasi Telegram**: setiap transaksi baru dari email dikirim ke Telegram, misalnya `Keluar Rp25.000 · Jajan · Indomaret (perlu review)`.
-- **Asisten AI (opsional, default mati)**: chat di app yang dijawab oleh agent Hermes kamu, jadi memorinya sama dengan Hermes di Telegram dan datanya dibaca lewat skill `finance-*`. Chat dibagi per sesi (konteks tidak tercampur), riwayatnya tersimpan di Kantong, dan model bisa dipilih per pesan lewat `CHAT_MODELS`. Data yang dibaca (nama merchant, isi email bank) diperlakukan sebagai data, bukan perintah, dan di chat web Hermes hanya boleh membaca data Kantong. Cara mengaktifkan: isi `API_SERVER_ENABLED=true`, `API_SERVER_KEY`, dan `API_SERVER_HOST` (alamat yang bisa dijangkau container Kantong, mis. IP Tailscale server) di `~/.hermes/.env`, restart Hermes gateway, lalu isi `HERMES_API_URL` (mis. `http://<ip>:8642`), `HERMES_API_KEY`, dan opsional `CHAT_MODELS` di `.env` Kantong. Catatan: lewat API, Hermes jalan dengan semua tool-nya (termasuk terminal), jadi password Kantong juga melindungi akses itu.
+- **Asisten AI (opsional)**: chat di app yang dijawab oleh agent Hermes kamu, jadi memorinya sama dengan Hermes di Telegram dan datanya dibaca lewat skill `finance-*`. Chat dibagi per sesi (konteks tidak tercampur), riwayatnya tersimpan di Kantong, dan model bisa dipilih per pesan lewat `CHAT_MODELS`. Data yang dibaca (nama merchant, isi email bank) diperlakukan sebagai data, bukan perintah, dan di chat web Hermes hanya boleh membaca data Kantong. Cara mengaktifkan: isi `API_SERVER_ENABLED=true`, `API_SERVER_KEY`, dan `API_SERVER_HOST` (alamat yang bisa dijangkau container Kantong, mis. IP Tailscale server) di `~/.hermes/.env`, restart Hermes gateway, lalu isi `HERMES_API_URL` (mis. `http://<ip>:8642`), `HERMES_API_KEY`, dan opsional `CHAT_MODELS` di `.env` Kantong. Catatan: lewat API, Hermes jalan dengan semua tool-nya (termasuk terminal), jadi password Kantong juga melindungi akses itu.
 - **Backup harian**: salinan database tiap jam 03:00 WIB, 14 hari terakhir disimpan.
 - **Realtime**: transaksi baru dari agent langsung muncul di semua perangkat (SSE).
 - **Tampilan**: di HP ada tab bar bawah (Beranda, Transaksi, tombol **+** di tengah, Budget, Aset); Kalender dibuka dari toggle Daftar/Kalender di Transaksi, Analitik dari Beranda. Di desktop semua menu ada di sidebar kiri. Kategori dan jenis aset punya ikon berwarna, tombol mata di pojok kanan atas menyembunyikan semua nominal, mengikuti dark mode sistem, dan bisa di-install sebagai PWA.
@@ -68,7 +68,10 @@ Email bank/broker ──▶ mailbox (IMAP, read-only)
 
 Skill agent-nya ([Hermes](https://github.com/NousResearch/hermes-agent)) ada di [`hermes/`](hermes). Cara menyambungkan email bank ke Hermes, dari bikin app password sampai cron, ada di **[docs/hermes-email.md](docs/hermes-email.md)**.
 
-<p align="center"><img src="docs/screenshots/telegram-asset.jpg" width="300" alt="Kirim screenshot portofolio ke Hermes di Telegram untuk update aset" /></p>
+<figure>
+    <p align="center"><img src="docs/screenshots/telegram-asset.jpg" width="300" alt="Kirim screenshot portofolio ke Hermes di Telegram untuk update aset" /></p>
+    <figcaption align="center"> Pencatatan Asset (keluar/masuk/revisi) dapat dilakukan secara langsung lewat telegram</figcaption>
+</figure>
 
 Skill kedua, [`hermes/finance-assets`](hermes/finance-assets), mengisi aset dari screenshot portofolio yang kamu kirim ke Hermes di Telegram. Panduannya ada di **[docs/hermes-assets.md](docs/hermes-assets.md)**. Skill ketiga, [`hermes/finance-receipt`](hermes/finance-receipt), mencatat transaksi dari foto struk belanja: **[docs/hermes-receipt.md](docs/hermes-receipt.md)**.
 
@@ -121,8 +124,8 @@ Semua endpoint `/api/*` butuh `Authorization: Bearer $API_TOKEN` atau cookie ses
 | `GET/POST/PATCH/DELETE /api/recurring`, `POST /api/recurring/{id}/advance` | Transaksi berulang (`?skip=1` untuk lewati) |
 | `GET/POST/PATCH/DELETE /api/assets`, `GET /api/assets/history`, `GET /api/assets/{id}/activity` | Aset, total kekayaan, riwayat harian, transaksi & order per aset |
 | `POST /api/orders`, `PATCH /api/orders/{order_ref}` | Order investasi pending → success/failed |
-| `GET /api/fx?currency=USD` | Kurs ke IDR |
-| `GET /api/export.xlsx` | Semua transaksi (Excel) |
+| `GET /api/fx?currency=USD` | Konversi Kurs ke IDR |
+| `GET /api/export.xlsx` | Export Semua transaksi (Excel) |
 | `GET /api/events` | Stream SSE |
 
 ```sh
@@ -144,20 +147,25 @@ curl -s -H "$AUTH" -X PATCH $API/api/orders/TRX-123 -d '{"status":"success"}'
 curl -N -H "$AUTH" $API/api/events   # biarin kebuka, lihat event masuk
 ```
 
-## Backup
+## Backup & Restore
 
 App membuat backup sendiri tiap hari jam 03:00 WIB (dan saat start kalau backup hari itu belum ada) ke `/data/backups/money-YYYY-MM-DD.db` di volume, dengan 14 file terakhir disimpan. Backup dibuat pakai `VACUUM INTO`, jadi app nggak perlu di-stop.
 
-Salin ke Mac (jalankan dari Mac):
+Salin container ke Directory:
 
 ```sh
 mkdir -p ~/Backups/kantong
 ssh user@server "docker cp kantong-money-1:/data/backups -" | tar -x -C ~/Backups/kantong
 ```
 
-Supaya berkala, tambahkan baris itu ke `crontab -e` di Mac, misalnya `0 9 * * * ssh ... | tar ...`.
+Supaya berkala, tambahkan baris itu ke **Cronjob**.
 
-Restore (di server; ganti tanggalnya):
+``` sh
+crontab -e
+0 9 * * * ssh ... | tar ...
+```
+
+Restore:
 
 ```sh
 docker compose stop
