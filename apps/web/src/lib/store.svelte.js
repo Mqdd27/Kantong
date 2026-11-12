@@ -101,6 +101,7 @@ export function connect() {
   es?.close()
   clearTimeout(retry)
   if (!s.authed) return
+  if (import.meta.env.MODE === 'demo') return void (s.live = true)
   es = new EventSource('/api/events')
   es.onopen = () => (s.live = true)
   es.addEventListener('transaction.created', (e) => upsert(JSON.parse(e.data)))

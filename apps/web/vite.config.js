@@ -2,10 +2,12 @@ import { defineConfig } from 'vite'
 import { svelte } from '@sveltejs/vite-plugin-svelte'
 import { VitePWA } from 'vite-plugin-pwa'
 
-export default defineConfig({
+// `vite build --mode demo`: static demo for GitHub Pages (mock API, relative paths, no service worker)
+export default defineConfig(({ mode }) => ({
+  ...(mode === 'demo' && { base: './' }),
   plugins: [
     svelte(),
-    VitePWA({
+    mode !== 'demo' && VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['apple-touch-icon.png', 'favicon.png'],
       manifest: {
@@ -30,6 +32,6 @@ export default defineConfig({
     }),
   ],
   // Go embeds this dir (apps/api/main.go: go:embed all:web/dist)
-  build: { outDir: '../api/web/dist', emptyOutDir: true },
+  build: mode === 'demo' ? { outDir: 'demo/dist', emptyOutDir: true } : { outDir: '../api/web/dist', emptyOutDir: true },
   server: { proxy: { '/api': 'http://127.0.0.1:8080' } },
-})
+}))

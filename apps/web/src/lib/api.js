@@ -1,6 +1,8 @@
 export class AuthError extends Error {}
 
 export async function api(path, { method = 'GET', body } = {}) {
+  // GitHub Pages demo: no server; the mock is dropped from normal builds
+  if (import.meta.env.MODE === 'demo') return (await import('../../demo/mock.js')).api(path, { method, body })
   const res = await fetch('/api' + path, {
     method,
     headers: body ? { 'Content-Type': 'application/json' } : {},

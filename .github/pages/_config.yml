@@ -1,0 +1,4 @@
+title: Kantong
+description: Money manager pribadi yang self-hosted
+theme: jekyll-theme-primer
+# README.md becomes the home page (jekyll-readme-index); demo/ is the prebuilt PWA, left as-is

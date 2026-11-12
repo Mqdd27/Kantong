@@ -43,7 +43,7 @@
 
 <PageHead title="Transaksi">
   <a class="icon" href="#/rules" aria-label="Aturan kategori" title="Aturan kategori"><Icon name="tag" /></a>
-  <a class="icon" href="/api/export.xlsx" download aria-label="Export Excel" title="Export Excel"><Icon name="download" /></a>
+  <a class="icon" href="api/export.xlsx" download aria-label="Export Excel" title="Export Excel"><Icon name="download" /></a>
 </PageHead>
 
 <ViewToggle active="tx" />

@@ -55,7 +55,7 @@
   <Login />
 {:else}
   <aside>
-    <a class="brand" href="#/"><img src="/favicon.png" alt="" width="28" height="28" />Kantong</a>
+    <a class="brand" href="#/"><img src="favicon.png" alt="" width="28" height="28" />Kantong</a>
     <button class="primary new" onclick={() => (sheet = {})}><Icon name="plus" size={18} />Transaksi</button>
     <nav aria-label="Menu utama">
       {#each side as [href, label, icon]}
@@ -70,11 +70,14 @@
           {#if href === '/review' && reviewCount}<span class="count">{reviewCount}</span>{/if}
         </a>
       {/each}
-      <a href="/api/export.xlsx" download><Icon name="download" />Export Excel</a>
+      <a href="api/export.xlsx" download><Icon name="download" />Export Excel</a>
     </nav>
   </aside>
 
   <main class:narrow={route === '/tx' || route === '/review' || route === '/rules' || route === '/calendar' || route === '/chat'}>
+    {#if import.meta.env.MODE === 'demo'}
+      <p class="demo">Demo dengan data contoh. Perubahan hilang saat halaman dimuat ulang. <a href="../">Dokumentasi</a></p>
+    {/if}
     {#if route === '/tx'}
       <TxList {open} />
     {:else if route === '/review'}
@@ -253,6 +256,19 @@
     color: var(--on-warn);
     font-size: 12px;
     text-align: center;
+  }
+
+  .demo {
+    margin: 0 0 12px;
+    padding: 8px 12px;
+    border-radius: 12px;
+    background: var(--surface);
+    border: 1px dashed var(--field);
+    color: var(--muted);
+    font-size: 0.85rem;
+  }
+  .demo a {
+    color: var(--accent);
   }
 
   .toast {
