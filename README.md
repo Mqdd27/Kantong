@@ -64,7 +64,7 @@ Email bank/broker ──▶ mailbox (IMAP, read-only)
 ```
 
 - Tahap fetch berjalan tanpa LLM. Email yang `Message-ID`-nya sudah tercatat dilewati lewat `POST /api/source-refs/check`, jadi LLM cuma dibangunkan kalau ada email baru.
-- `source_ref` (Message-ID) bersifat unik, sehingga email yang sama nggak pernah tercatat dua kali.
+- `source_ref` (Message-ID) bersifat unik, sehingga email yang sama tidak pernah tercatat dua kali.
 - Transaksi dengan `confidence < 0.7` otomatis masuk antrian Review.
 - Transfer dari email tanpa `to_account` juga otomatis masuk Review, karena email tidak bisa membedakan pindah ke rekening sendiri dari kirim uang ke orang lain. Di Review pilih "Ke orang lain" (jadi pengeluaran) atau setujui apa adanya.
 
@@ -91,7 +91,7 @@ curl http://127.0.0.1:8080/healthz   # -> ok
 | `APP_PASSWORD` | – | Password login PWA |
 | `SESSION_SECRET` | – | Minimal 32 karakter, untuk tanda tangan cookie sesi |
 | `HOST_BIND` / `HOST_PORT` | `127.0.0.1` / `8080` | Alamat & port yang di-publish compose |
-| `COOKIE_SECURE` | `true` | Set `false` hanya kalau diakses lewat HTTP biasa (tanpa HTTPS, PWA nggak bisa di-install) |
+| `COOKIE_SECURE` | `true` | Set `false` hanya kalau diakses lewat HTTP biasa (tanpa HTTPS, PWA tidak bisa di-install) |
 | `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | – | Notifikasi transaksi dari email; kosong = mati |
 | `FX_URL` | `https://api.frankfurter.dev` | Sumber kurs |
 | `GOLD_URL` | `https://api.gold-api.com` | Harga emas spot (aset mata uang `XAU` = gram) |
@@ -151,7 +151,7 @@ curl -N -H "$AUTH" $API/api/events   # biarin kebuka, lihat event masuk
 
 ## Backup & Restore
 
-App membuat backup sendiri tiap hari jam 03:00 WIB (dan saat start kalau backup hari itu belum ada) ke `/data/backups/money-YYYY-MM-DD.db` di volume, dengan 14 file terakhir disimpan. Backup dibuat pakai `VACUUM INTO`, jadi app nggak perlu di-stop.
+App membuat backup sendiri tiap hari jam 03:00 WIB (dan saat start kalau backup hari itu belum ada) ke `/data/backups/money-YYYY-MM-DD.db` di volume, dengan 14 file terakhir disimpan. Backup dibuat pakai `VACUUM INTO`, jadi app tidak perlu di-stop.
 
 Salin container ke Directory:
 

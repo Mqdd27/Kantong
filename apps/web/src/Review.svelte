@@ -58,7 +58,7 @@
     {/if}
   </article>
 {:else}
-  <section class="card"><p class="empty">Nggak ada yang perlu direview.</p></section>
+  <section class="card"><p class="empty">Tidak ada yang perlu direview.</p></section>
 {/each}
 
 <style>

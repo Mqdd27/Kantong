@@ -78,7 +78,7 @@
       {/each}
     </section>
   {:else}
-    <section class="card"><p class="empty">{found ? 'Nggak ketemu.' : 'Belum ada transaksi bulan ini.'}</p></section>
+    <section class="card"><p class="empty">{found ? 'Tidak ketemu.' : 'Belum ada transaksi bulan ini.'}</p></section>
   {/each}
 </div>
 

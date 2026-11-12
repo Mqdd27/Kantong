@@ -38,9 +38,9 @@ function put(t) {
 }
 
 const reply = 'Ini versi demo, jadi Hermes tidak benar-benar dihubungi. Di Kantong yang kamu jalankan sendiri, jawaban datang dari agent Hermes kamu dan datanya dibaca lewat skill finance-*.'
-const chatSession = { id: 1, title: 'Makan bulan ini boros nggak?', updated_at: `${now}-10 20:15:00` }
+const chatSession = { id: 1, title: 'Makan bulan ini boros tidak?', updated_at: `${now}-10 20:15:00` }
 const chatMessages = [
-  { id: 1, role: 'user', text: 'Makan bulan ini boros nggak?', created_at: chatSession.updated_at },
+  { id: 1, role: 'user', text: 'Makan bulan ini boros tidak?', created_at: chatSession.updated_at },
   { id: 2, role: 'assistant', text: 'Masih aman. Makan bulan ini sekitar 40% dari budget Rp2.000.000, dan jatah per harinya masih cukup sampai akhir bulan. Yang paling sering: GoFood dan warteg.', model: 'demo', created_at: chatSession.updated_at },
 ]
 

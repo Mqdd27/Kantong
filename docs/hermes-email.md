@@ -20,9 +20,9 @@ Yang perlu disiapkan:
 
 ## 1. Siapkan mailbox
 
-Skill membaca email secara **read-only**: email nggak ditandai dibaca, nggak dipindah, dan nggak dihapus. Kamu boleh pakai mailbox utama atau mailbox khusus.
+Skill membaca email secara **read-only**: email tidak ditandai dibaca, tidak dipindah, dan tidak dihapus. Kamu boleh pakai mailbox utama atau mailbox khusus.
 
-**Buat app password** (password akun biasa nggak bisa dipakai untuk IMAP):
+**Buat app password** (password akun biasa tidak bisa dipakai untuk IMAP):
 
 | Provider | Host IMAP | Cara bikin app password |
 |---|---|---|
@@ -87,7 +87,7 @@ python3 ~/.hermes/skills/finance-email/scripts/fetch.py
 
 Baris terakhir output-nya berupa JSON:
 
-- `{"wakeAgent": false}` artinya nggak ada email baru. Ini normal kalau semua email sudah tercatat.
+- `{"wakeAgent": false}` artinya tidak ada email baru. Ini normal kalau semua email sudah tercatat.
 - `{"wakeAgent": true, "data": {"emails": [...]}}` artinya ada email baru yang siap di-parse.
 
 Kalau ada error IMAP atau API, lihat log-nya:
@@ -103,7 +103,7 @@ hermes cron create --name finance-email --script finance-email-fetch.py --skill 
 hermes cron list
 ```
 
-Setiap 10 menit, `fetch.py` jalan duluan tanpa LLM. Hermes cuma dibangunkan kalau ada email yang `Message-ID`-nya belum tercatat di Kantong, jadi run tanpa email baru nggak makan token.
+Setiap 10 menit, `fetch.py` jalan duluan tanpa LLM. Hermes cuma dibangunkan kalau ada email yang `Message-ID`-nya belum tercatat di Kantong, jadi run tanpa email baru tidak makan token.
 
 ## 7. Cek end-to-end
 
@@ -119,7 +119,7 @@ Mau mengisi aset dari screenshot portofolio juga? Lihat [hermes-assets.md](herme
 |---|---|
 | `FETCH config missing: …` di log | Env di `~/.hermes/.env` belum lengkap |
 | IMAP `AUTHENTICATIONFAILED` | Yang dipakai harus app password, bukan password akun |
-| Email bank nggak pernah kebaca | Alamat pengirim belum ada di `ALLOW`, atau filter forward Gmail belum jalan (cek apakah emailnya sampai ke mailbox IMAP). Folder yang dibaca hanya `INBOX` dan `Junk`, untuk 3 hari terakhir |
-| Transaksi masuk dua kali | Nggak mungkin dari email yang sama, karena `source_ref` (Message-ID) unik. Kalau dobel dengan transaksi berulang, matikan "Catat otomatis" di transaksi berulang itu |
+| Email bank tidak pernah kebaca | Alamat pengirim belum ada di `ALLOW`, atau filter forward Gmail belum jalan (cek apakah emailnya sampai ke mailbox IMAP). Folder yang dibaca hanya `INBOX` dan `Junk`, untuk 3 hari terakhir |
+| Transaksi masuk dua kali | Tidak mungkin dari email yang sama, karena `source_ref` (Message-ID) unik. Kalau dobel dengan transaksi berulang, matikan "Catat otomatis" di transaksi berulang itu |
 | Kategori sering salah | Koreksi di Review supaya jadi aturan, atau perbaiki `parsing-rules.md` |
-| Nggak ada notif Telegram | `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` di `.env` Kantong, lalu `docker logs kantong-money-1 \| grep telegram` |
+| Tidak ada notif Telegram | `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` di `.env` Kantong, lalu `docker logs kantong-money-1 \| grep telegram` |

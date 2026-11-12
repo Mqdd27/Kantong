@@ -72,7 +72,7 @@
     </button>
   {/each}
 </div>
-<p class="legend"><span class="sw"></span>makin gelap = makin besar pengeluaran · <i class="inc"></i> ada pemasukan · ~ tagihan berulang · Investasi nggak dihitung</p>
+<p class="legend"><span class="sw"></span>makin gelap = makin besar pengeluaran · <i class="inc"></i> ada pemasukan · ~ tagihan berulang · Investasi tidak dihitung</p>
 </section>
 
 {#if sel}
@@ -84,7 +84,7 @@
   {#each sel.txs as tx (tx.id)}
     <TxRow {tx} onclick={() => open(tx)} />
   {:else}
-    <p class="empty">{sel.up ? `Tagihan berulang ${fmtIDR.format(sel.up)} dijadwalkan.` : 'Nggak ada transaksi.'}</p>
+    <p class="empty">{sel.up ? `Tagihan berulang ${fmtIDR.format(sel.up)} dijadwalkan.` : 'Tidak ada transaksi.'}</p>
   {/each}
   </section>
 {/if}

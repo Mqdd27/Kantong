@@ -96,7 +96,7 @@
     {/if}
     <label class="check">
       <input type="checkbox" bind:checked={auto} />
-      <span>Catat otomatis di tanggalnya<br /><small>Matikan kalau transaksinya sudah tercatat dari email bank, biar nggak dobel.</small></span>
+      <span>Catat otomatis di tanggalnya<br /><small>Matikan kalau transaksinya sudah tercatat dari email bank, biar tidak dobel.</small></span>
     </label>
     <label>Catatan <input bind:value={note} autocomplete="off" /></label>
     <div class="actions">

@@ -143,7 +143,7 @@
           {/if}
         </div>
       {:else}
-        <p class="empty">Nggak ada tagihan lagi bulan ini.</p>
+        <p class="empty">Tidak ada tagihan lagi bulan ini.</p>
       {/each}
     </section>
 
