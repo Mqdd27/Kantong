@@ -106,7 +106,8 @@ Monorepo [Turborepo](https://turborepo.com): `apps/api` (Go, embed `apps/api/web
 ```sh
 npm ci
 npm run build                                # turbo: web lalu api → apps/api/kantong
-npm test                                     # go test (setelah web build)
+npm test                                     # go test + vitest web (setelah web build)
+npm test --workspace web                     # vitest saja (apps/web/src/lib/*.test.js)
 set -a; . ./.env; set +a
 DB_PATH=./money.db npm run dev               # go run + Vite (proxy /api ke :8080) paralel
 ```
