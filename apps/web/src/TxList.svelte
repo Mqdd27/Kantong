@@ -16,6 +16,22 @@
   const active = $derived(chips.includes(cat) ? cat : null) // unknown names in the URL are ignored
   const pick = (name) => (location.hash = name && name !== active ? '#/tx?cat=' + encodeURIComponent(name) : '#/tx')
 
+  // chip row scrolls sideways; arrows page through it and dim at either end
+  let row = $state()
+  let canL = $state(false)
+  let canR = $state(false)
+  const edges = () => {
+    if (!row) return
+    canL = row.scrollLeft > 1
+    canR = row.scrollLeft + row.clientWidth < row.scrollWidth - 1
+  }
+  const slide = (dir) => row.scrollBy({ left: dir * row.clientWidth * 0.8, behavior: 'smooth' })
+  $effect(() => {
+    chips.length
+    row?.querySelector('[aria-pressed="true"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    edges()
+  })
+
   let q = $state('')
   let found = $state(null) // search results across all months, null = not searching
   let timer
@@ -47,6 +63,8 @@
   const signed = (n) => (n > 0 ? '+' : n < 0 ? '−' : '') + fmtIDR.format(Math.abs(n))
 </script>
 
+<svelte:window onresize={edges} />
+
 <PageHead title="Transaksi">
   <a class="icon" href="#/rules" aria-label="Aturan kategori" title="Aturan kategori"><Icon name="tag" /></a>
   <a class="icon" href="api/export.xlsx" download aria-label="Export Excel" title="Export Excel"><Icon name="download" /></a>
@@ -60,11 +78,15 @@
 </label>
 
 {#if chips.length}
-  <div class="chips" role="group" aria-label="Filter kategori">
-    <button aria-pressed={!active} onclick={() => pick(null)}>Semua</button>
-    {#each chips as name}
-      <button aria-pressed={active === name} onclick={() => pick(name)}>{name}</button>
-    {/each}
+  <div class="chipbar">
+    <button class="nav" aria-label="Geser kategori ke kiri" disabled={!canL} onclick={() => slide(-1)}><Icon name="left" size={18} /></button>
+    <div class="chips" role="group" aria-label="Filter kategori" bind:this={row} onscroll={edges}>
+      <button aria-pressed={!active} onclick={() => pick(null)}>Semua</button>
+      {#each chips as name}
+        <button aria-pressed={active === name} onclick={() => pick(name)}>{name}</button>
+      {/each}
+    </div>
+    <button class="nav" aria-label="Geser kategori ke kanan" disabled={!canR} onclick={() => slide(1)}><Icon name="right" size={18} /></button>
   </div>
 {/if}
 
@@ -125,20 +147,33 @@
   .search:focus-within {
     outline: 2px solid var(--accent);
   }
+  .chipbar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 12px;
+  }
   .chips {
+    flex: 1;
     display: flex;
     gap: 6px;
-    margin: 0 -16px 12px;
-    padding: 0 16px;
     overflow-x: auto;
     scrollbar-width: none;
   }
-  @media (min-width: 900px) {
-    .chips {
-      flex-wrap: wrap;
-      margin: 0 0 12px;
-      padding: 0;
-    }
+  .chips::-webkit-scrollbar {
+    display: none;
+  }
+  .nav {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    border-radius: 50%;
+  }
+  .nav:disabled {
+    opacity: 0.35;
   }
   .chips button {
     flex: none;
