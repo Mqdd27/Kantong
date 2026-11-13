@@ -59,13 +59,15 @@ func TestChatTextValidation(t *testing.T) {
 		"4000":        {strings.Repeat("a", 4000), 200},
 		"4001":        {strings.Repeat("a", 4001), 400},
 		"4000 padded": {"  " + strings.Repeat("a", 4000) + "  ", 200}, // trimmed before the length check
+		"4000 runes":  {strings.Repeat("é", 4000), 200},               // counted in characters, not bytes
+		"4001 runes":  {strings.Repeat("é", 4001), 400},
 	} {
 		if code := call(t, srv, "POST", "/api/chat", chatBody(c.text), nil); code != c.want {
 			t.Errorf("%s: status %d, want %d", name, code, c.want)
 		}
 	}
-	if len(seen) != 2 {
-		t.Errorf("Hermes got %d calls, want 2 (only the accepted texts)", len(seen))
+	if len(seen) != 3 {
+		t.Errorf("Hermes got %d calls, want 3 (only the accepted texts)", len(seen))
 	}
 }
 
@@ -132,10 +134,12 @@ func TestChatHistoryLimit(t *testing.T) {
 
 func TestChatHermesFailures(t *testing.T) {
 	for name, h := range map[string]http.HandlerFunc{
-		"non-200":     func(w http.ResponseWriter, r *http.Request) { http.Error(w, "boom", 500) },
-		"empty reply": func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(`{"choices":[{"message":{"content":"  "}}]}`)) },
-		"no choices":  func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(`{"id":"x"}`)) },
-		"not json":    func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(`<html>`)) },
+		"non-200": func(w http.ResponseWriter, r *http.Request) { http.Error(w, "boom", 500) },
+		"empty reply": func(w http.ResponseWriter, r *http.Request) {
+			w.Write([]byte(`{"choices":[{"message":{"content":"  "}}]}`))
+		},
+		"no choices": func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(`{"id":"x"}`)) },
+		"not json":   func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(`<html>`)) },
 		"conn closed": func(w http.ResponseWriter, r *http.Request) {
 			conn, _, err := w.(http.Hijacker).Hijack()
 			if err == nil {
@@ -206,10 +210,9 @@ func TestChatPromptAndHeaders(t *testing.T) {
 }
 
 func TestChatDelete(t *testing.T) {
-	// ponytail: asserts current behavior; deleting a missing session is idempotent (204), see issue #6 findings
 	srv := newChatServer(t, echoHermes(new([]map[string]any)))
-	if code := call(t, srv, "DELETE", "/api/chat/999", "", nil); code != 204 {
-		t.Errorf("DELETE missing session = %d, want 204", code)
+	if code := call(t, srv, "DELETE", "/api/chat/999", "", nil); code != 404 {
+		t.Errorf("DELETE missing session = %d, want 404", code)
 	}
 	if code := call(t, srv, "DELETE", "/api/chat/abc", "", nil); code != 400 {
 		t.Errorf("DELETE bad id = %d, want 400", code)

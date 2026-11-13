@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // Optional AI assistant, served by the owner's Hermes agent through its
@@ -122,7 +123,16 @@ func (a *app) deleteChatSession(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 	tx.Exec(`DELETE FROM chat_messages WHERE session_id = ?`, id)
-	if _, err := tx.Exec(`DELETE FROM chat_sessions WHERE id = ?`, id); err != nil || tx.Commit() != nil {
+	res, err := tx.Exec(`DELETE FROM chat_sessions WHERE id = ?`, id)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "delete failed")
+		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		writeErr(w, http.StatusNotFound, "chat session not found")
+		return
+	}
+	if tx.Commit() != nil {
 		writeErr(w, http.StatusInternalServerError, "delete failed")
 		return
 	}
@@ -159,7 +169,7 @@ func (a *app) postChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	in.Text = strings.TrimSpace(in.Text)
-	if in.Text == "" || len(in.Text) > 4000 {
+	if in.Text == "" || utf8.RuneCountInString(in.Text) > 4000 {
 		writeErr(w, http.StatusBadRequest, "text must be 1-4000 characters")
 		return
 	}
