@@ -15,8 +15,11 @@
   import Chat from './Chat.svelte'
   import { api } from './lib/api.js'
 
-  let route = $state(location.hash.slice(1) || '/')
-  addEventListener('hashchange', () => (route = location.hash.slice(1) || '/'))
+  // "#/tx?cat=Makan": route is the part before "?", the rest are page params
+  let hash = $state(location.hash.slice(1))
+  addEventListener('hashchange', () => (hash = location.hash.slice(1)))
+  const route = $derived(hash.split('?')[0] || '/')
+  const params = $derived(new URLSearchParams(hash.split('?')[1]))
 
   // null = closed, {} = add, {tx} = edit
   let sheet = $state(null)
@@ -79,7 +82,7 @@
       <p class="demo">Demo dengan data contoh. Perubahan hilang saat halaman dimuat ulang. <a href="https://github.com/Mqdd27/Kantong">Dokumentasi</a></p>
     {/if}
     {#if route === '/tx'}
-      <TxList {open} />
+      <TxList {open} cat={params.get('cat')} />
     {:else if route === '/review'}
       <Review {open} />
     {:else if route === '/assets'}

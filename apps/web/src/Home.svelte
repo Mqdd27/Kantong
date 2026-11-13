@@ -75,13 +75,13 @@
         <ul class="bars">
           {#each byCat as [cat, amt]}
             {@const look = catLook(cat)}
-            <li>
+            <li><a href="#/tx?cat={encodeURIComponent(cat)}">
               <span class="avatar sm" style:--hue={look.hue}><Icon name={look.icon} size={18} /></span>
               <span class="what">
                 <span class="line"><span>{cat}</span><span class="num">{fmtIDR.format(amt)}</span></span>
                 <span class="bar"><span class="grow" style:width="{(amt / max) * 100}%" style:background={look.hue}></span></span>
               </span>
-            </li>
+            </a></li>
           {/each}
         </ul>
       {:else}
@@ -190,12 +190,22 @@
     padding: 0;
     margin: 0;
     display: grid;
-    gap: 14px;
+    gap: 2px;
   }
-  .bars li {
+  .bars a {
     display: flex;
     align-items: center;
     gap: 12px;
+    min-height: 44px;
+    margin: 0 -8px;
+    padding: 4px 8px;
+    border-radius: 10px;
+    color: inherit;
+    text-decoration: none;
+  }
+  .bars a:hover,
+  .bars a:focus-visible {
+    background: var(--bg);
   }
   .what {
     flex: 1;

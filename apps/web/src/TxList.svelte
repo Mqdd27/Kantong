@@ -8,7 +8,13 @@
   import ViewToggle from './ViewToggle.svelte'
   import Icon from './Icon.svelte'
 
-  let { open } = $props()
+  let { open, cat } = $props()
+
+  // one chip per name (Lainnya / Penyesuaian exist as both in and out), spending first
+  const ORDER = { out: 0, in: 1, transfer: 2 }
+  const chips = $derived([...new Set(s.categories.toSorted((a, b) => (ORDER[a.type] ?? 3) - (ORDER[b.type] ?? 3)).map((c) => c.name))])
+  const active = $derived(chips.includes(cat) ? cat : null) // unknown names in the URL are ignored
+  const pick = (name) => (location.hash = name && name !== active ? '#/tx?cat=' + encodeURIComponent(name) : '#/tx')
 
   let q = $state('')
   let found = $state(null) // search results across all months, null = not searching
@@ -23,7 +29,7 @@
     s.txs // re-run the search when transactions change
     if (found && q.trim()) api('/transactions?q=' + encodeURIComponent(q.trim())).then((r) => (found = r)).catch(() => {})
   })
-  const list = $derived(found ?? s.txs)
+  const list = $derived((found ?? s.txs).filter((t) => !active || t.category === active))
   const net = (txs) => txs.reduce((n, t) => n + (t.type === 'out' ? -t.amount : t.type === 'in' ? t.amount : 0), 0)
   const sum = (type) => list.reduce((n, t) => (t.type === type ? n + t.amount : n), 0)
   const inSum = $derived(sum('in'))
@@ -53,6 +59,15 @@
   <input type="search" bind:value={q} placeholder="Cari merchant, catatan, kategori…" aria-label="Cari transaksi" />
 </label>
 
+{#if chips.length}
+  <div class="chips" role="group" aria-label="Filter kategori">
+    <button aria-pressed={!active} onclick={() => pick(null)}>Semua</button>
+    {#each chips as name}
+      <button aria-pressed={active === name} onclick={() => pick(name)}>{name}</button>
+    {/each}
+  </div>
+{/if}
+
 {#if !found}<MonthBar />{/if}
 
 <div class="stack">
@@ -78,7 +93,14 @@
       {/each}
     </section>
   {:else}
-    <section class="card"><p class="empty">{found ? 'Tidak ketemu.' : 'Belum ada transaksi bulan ini.'}</p></section>
+    <section class="card">
+      {#if active}
+        <p class="empty">Tidak ada transaksi {active} {found ? 'yang cocok' : 'bulan ini'}.</p>
+        <p class="empty"><button onclick={() => pick(null)}>Hapus filter</button></p>
+      {:else}
+        <p class="empty">{found ? 'Tidak ketemu.' : 'Belum ada transaksi bulan ini.'}</p>
+      {/if}
+    </section>
   {/each}
 </div>
 
@@ -102,6 +124,34 @@
   }
   .search:focus-within {
     outline: 2px solid var(--accent);
+  }
+  .chips {
+    display: flex;
+    gap: 6px;
+    margin: 0 -16px 12px;
+    padding: 0 16px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  @media (min-width: 900px) {
+    .chips {
+      flex-wrap: wrap;
+      margin: 0 0 12px;
+      padding: 0;
+    }
+  }
+  .chips button {
+    flex: none;
+    padding: 7px 14px;
+    border-radius: 999px;
+    font-size: 14px;
+    white-space: nowrap;
+  }
+  .chips [aria-pressed='true'] {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+    color: var(--accent);
+    font-weight: 600;
   }
   .summary {
     display: grid;
