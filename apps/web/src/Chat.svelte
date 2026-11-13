@@ -63,7 +63,11 @@
   }
 
   async function remove() {
-    if (!(await act(`/chat/${current}`, 'DELETE'))) return
+    if (!(await act(`/chat/${current}`, 'DELETE'))) {
+      // e.g. 404 when another device already deleted it: drop it only if the server no longer has it
+      const r = await api('/chat').catch(() => null)
+      if (!r?.sessions || r.sessions.some((c) => c.id === current)) return
+    }
     sessions = sessions.filter((c) => c.id !== current)
     open(0)
   }
