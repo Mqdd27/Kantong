@@ -157,42 +157,25 @@ curl -N -H "$AUTH" $API/api/events   # biarin kebuka, lihat event masuk
 
 App membuat backup sendiri tiap hari jam 03:00 WIB (dan saat start kalau backup hari itu belum ada) ke `/data/backups/money-YYYY-MM-DD.db` di volume, dengan 14 file terakhir disimpan. Backup dibuat pakai `VACUUM INTO`, jadi app tidak perlu di-stop.
 
-Backup ini masih satu volume dengan database, jadi kalau volume/disk rusak atau terhapus (`docker volume rm`), backup-nya ikut hilang. Simpan salinan di luar pakai `scripts/offsite-backup.sh`. Script ini ambil backup terbaru, cek pakai `PRAGMA integrity_check`, enkripsi pakai [age](https://github.com/FiloSottile/age), lalu kirim ke disk lain atau ke cloud lewat rclone. Script gagal (exit 1) kalau backup terbaru umurnya lebih dari 2 hari atau rusak.
-
-Setup sekali di server:
+Salin container ke Directory:
 
 ```sh
-sudo apt install sqlite3 age rclone   # rclone hanya kalau tujuannya cloud (lalu `rclone config`)
-age-keygen -o kantong.key             # simpan file ini DI LUAR server (password manager), lalu hapus dari server
-# catat public key-nya (age1...), cuma itu yang perlu ada di server
+mkdir -p ~/Backups/kantong
+ssh user@server "docker cp kantong-money-1:/data/backups -" | tar -x -C ~/Backups/kantong
 ```
 
-Jalankan tiap hari lewat cron root (`sudo crontab -e`), kapan saja setelah 03:00 WIB:
+Supaya berkala, tambahkan baris itu ke **Cronjob**.
 
-```sh
-0 5 * * * DEST=gdrive:kantong AGE_RECIPIENT=age1... /path/ke/Kantong/scripts/offsite-backup.sh
+``` sh
+crontab -e
+0 9 * * * ssh ... | tar ...
 ```
 
-`DEST` bisa folder di disk lain (`/mnt/usb/kantong`) atau remote rclone (`gdrive:kantong`). Kalau lokasi volume Docker beda dari default, isi juga `SRC` (cek pakai `docker volume inspect kantong_money-data`). Salinan di tujuan tidak dihapus otomatis (ukurannya kecil).
-
-Restore dari backup di volume:
+Restore:
 
 ```sh
 docker compose stop
 docker run --rm -v kantong_money-data:/data alpine sh -c \
   'cp /data/backups/money-2026-11-08.db /data/money.db && rm -f /data/money.db-wal /data/money.db-shm && chown 65532:65532 /data/money.db'
 docker compose start
-```
-
-Restore dari salinan luar (kalau volume ikut hilang):
-
-```sh
-rclone copyto gdrive:kantong/money-2026-11-08.db.age money.db.age   # atau cp dari disk lain
-age -d -i kantong.key -o money.db money.db.age
-sqlite3 money.db 'PRAGMA integrity_check'                          # harus "ok"
-docker compose up -d && docker compose stop                         # bikin volume baru kalau belum ada
-docker run --rm -v kantong_money-data:/data -v "$PWD":/in alpine sh -c \
-  'cp /in/money.db /data/money.db && rm -f /data/money.db-wal /data/money.db-shm && chown 65532:65532 /data/money.db'
-docker compose start
-rm money.db money.db.age kantong.key                                # jangan tinggalkan data & key di server
 ```
