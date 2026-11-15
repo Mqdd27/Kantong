@@ -106,6 +106,19 @@ select {
   color: var(--text);
   font-size: 16px; /* prevents iOS zoom on focus */
 }
+/* iOS Safari gives date/time inputs an intrinsic width that ignores width: 100% */
+input[type='date'],
+input[type='datetime-local'] {
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+  min-width: 0;
+  min-height: 44px;
+  text-align: left;
+}
+::-webkit-date-and-time-value {
+  text-align: left;
+}
 
 button {
   transition:
@@ -239,6 +252,7 @@ dialog.sheet[open]::backdrop {
 }
 .sheet label {
   display: grid;
+  grid-template-columns: minmax(0, 1fr); /* lets inputs shrink to the sheet width */
   gap: 4px;
   font-size: 13px;
   color: var(--muted);

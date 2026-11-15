@@ -144,7 +144,7 @@
     {#if corrected}
       <label class="check"><input type="checkbox" bind:checked={always} /> Selalu kategorikan “{merchant.trim()}” sebagai {category}</label>
     {/if}
-    <div class="amt">
+    <div class:two={type === 'transfer'}>
       <label>{type === 'transfer' ? 'Dari akun' : 'Akun'}
         <input bind:value={account} list="accounts" autocomplete="off" placeholder="mis. Jago" />
       </label>
