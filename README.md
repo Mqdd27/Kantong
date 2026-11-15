@@ -6,7 +6,7 @@ Money manager pribadi yang self-hosted. Notifikasi transaksi dari email bank/bro
 
 Satu binary Go (API + SQLite + SSE + PWA Svelte yang di-embed), image Docker ±22 MB, RAM idle ±3 MB.
 
-**[Coba demo →](https://mqdd27.github.io/Kantong/)** (data contoh, jalan di browser tanpa server)
+**[Coba demo →](https://mqdd27.github.io/Kantong/)**
 
 > 🤖 **Setup pakai AI agent:** kasih [docs/AGENT-SETUP.md](docs/AGENT-SETUP.md) ke Claude Code, Codex, atau agent lain. Agent-nya bakal setup dari server kosong sampai email bank + Hermes jalan. Contoh prompt:
 >
@@ -28,7 +28,7 @@ Satu binary Go (API + SQLite + SSE + PWA Svelte yang di-embed), image Docker ±2
 ## Fitur
 
 - **Transaksi**: masuk / keluar / transfer dengan kategori. Bisa dicari di semua bulan, dikelompokkan per hari dengan total harian, dan di-export ke Excel (.xlsx) lewat ikon unduh di header halaman Transaksi.
-- **Multi-currency**: transaksi dalam USD/SGD/JPY/... disimpan nominal aslinya, lalu dikonversi ke IDR pakai kurs hari itu ([frankfurter.dev](https://frankfurter.dev), data ECB).
+- **Multi-currency**: transaksi dalam USD/SGD/JPY/... disimpan nominal aslinya, lalu dikonversi ke IDR pakai kurs pada hari itu ([frankfurter.dev](https://frankfurter.dev), data ECB).
 - **Budget bulanan**: total dan per kategori, berlaku terus ke bulan berikutnya sampai diubah. Ada sisa bisa dibelanjakan (dikurangi tagihan yang akan datang), jatah per hari, dan penanda posisi bulan.
 - **Transaksi berulang**: gaji, langganan, cicilan, parkir kantor. Mingguan dengan pilihan hari (mis. Sen–Jum), bulanan dengan pilihan bulan, atau tahunan. Bisa dicatat otomatis atau manual (Catat / Lewati).
 - **Aset & portofolio**: rekening, valas, saham (total), obligasi, SBN, reksa dana, emas, kripto. Ada total kekayaan dalam IDR, alokasi per jenis, untung/rugi vs modal, target tabungan, proyeksi return obligasi/SBN (kupon dari nominal tiap bulan/3/6/12 bulan atau tanpa kupon, plus selisih pelunasan, bersih pajak 10%) sampai jatuh tempo, bunga rekening bank, dan emas dalam gram yang nilainya ikut harga emas harian, dan proyeksi return reksa dana. Saldo aset yang namanya sama dengan akun transaksi (mis. `Jago`) otomatis ikut bertambah/berkurang dari transaksi masuk/keluar/transfer (transfer antar rekening sendiri pakai `to_account`) sejak saldo terakhir disimpan; transaksi yang masih di Review belum dihitung. Kalau saldo rekening/e-wallet/tunai di-update manual atau dari screenshot dan beda dengan yang tercatat, selisihnya (bunga, biaya admin, belanja tanpa email) dicatat sebagai transaksi **Penyesuaian** di Review. Tap aset untuk lihat **Riwayat**-nya: semua transaksi akun itu (termasuk transfer masuk dan penyesuaian) dan order investasinya.
@@ -38,8 +38,8 @@ Satu binary Go (API + SQLite + SSE + PWA Svelte yang di-embed), image Docker ±2
 - **Review & aturan**: transaksi hasil parsing email yang kurang yakin ditandai untuk dicek sekali tap. Selama ada yang perlu direview, kartu kuning muncul di Beranda dan Transaksi (di desktop juga ada angka di sidebar). Daftar aturan dibuka dari ikon label di header Transaksi. Koreksi kategori bisa disimpan jadi aturan ("selalu kategorikan Gojek sebagai Transport"), dan email berikutnya dari merchant itu langsung masuk dengan kategori yang benar.
 - **Foto struk → transaksi**: kirim foto struk ke Hermes di Telegram, transaksi keluarnya langsung tercatat.
 - **Notifikasi Telegram**: setiap transaksi baru dari email dikirim ke Telegram, misalnya `Keluar Rp25.000 · Jajan · Indomaret (perlu review)`.
-- **Asisten AI (opsional)**: chat di app yang dijawab oleh agent Hermes kamu, jadi memorinya sama dengan Hermes di Telegram dan datanya dibaca lewat skill `finance-*`. Chat dibagi per sesi (konteks tidak tercampur), riwayatnya tersimpan di Kantong, dan model bisa dipilih per pesan lewat `CHAT_MODELS`. Data yang dibaca (nama merchant, isi email bank) diperlakukan sebagai data, bukan perintah, dan di chat web Hermes hanya boleh membaca data Kantong. Cara mengaktifkan: isi `API_SERVER_ENABLED=true`, `API_SERVER_KEY`, dan `API_SERVER_HOST` (alamat yang bisa dijangkau container Kantong, mis. IP Tailscale server) di `~/.hermes/.env`, restart Hermes gateway, lalu isi `HERMES_API_URL` (mis. `http://<ip>:8642`), `HERMES_API_KEY`, dan opsional `CHAT_MODELS` di `.env` Kantong. Catatan: lewat API, Hermes jalan dengan semua tool-nya (termasuk terminal), jadi password Kantong juga melindungi akses itu.
-- **Backup harian**: salinan database tiap jam 03:00 WIB, 14 hari terakhir disimpan.
+- **Asisten AI (opsional)**: chat di app yang dijawab oleh agent Hermes kamu, jadi memori/contexynya sama dengan Hermes yang sudah ada dan datanya dibaca lewat skill `finance-*`. Chat dibagi per sesi (agar konteks tidak tercampur), riwayatnya tersimpan di aplikasi Kantong, dan model bisa dipilih per pesan lewat `CHAT_MODELS`. Data yang dibaca (nama merchant, isi email bank) yang dijadikan sebagai data reference. Cara mengaktifkan: isi `API_SERVER_ENABLED=true`, `API_SERVER_KEY`, dan `API_SERVER_HOST` (alamat yang bisa dijangkau container Kantong, mis. IP Tailscale server) di `~/.hermes/.env`, restart Hermes gateway, lalu isi `HERMES_API_URL` (mis. `http://<ip>:8642`), `HERMES_API_KEY`, dan opsional `CHAT_MODELS` di `.env` Kantong. Catatan: lewat API, Hermes jalan dengan semua tool-nya (termasuk terminal), jadi password Kantong juga melindungi akses itu.
+- **Backup harian**: salinan database tiap jam 03:00 WIB, 14 hari terakhir disimpan (Jika diset di Cron).
 - **Realtime**: transaksi baru dari agent langsung muncul di semua perangkat (SSE).
 - **Tampilan**: di HP ada tab bar bawah (Beranda, Transaksi, tombol **+** di tengah, Budget, Aset); Kalender dibuka dari toggle Daftar/Kalender di Transaksi, Analitik dari Beranda. Di desktop semua menu ada di sidebar kiri. Kategori dan jenis aset punya ikon berwarna, tombol mata di pojok kanan atas menyembunyikan semua nominal, mengikuti dark mode sistem, dan bisa di-install sebagai PWA.
 
@@ -63,10 +63,10 @@ Email bank/broker ──▶ mailbox (IMAP, read-only)
                                                 PWA (desktop & HP)
 ```
 
-- Tahap fetch berjalan tanpa LLM. Email yang `Message-ID`-nya sudah tercatat dilewati lewat `POST /api/source-refs/check`, jadi LLM cuma dibangunkan kalau ada email baru.
+- Tahap fetch berjalan tanpa LLM. Email yang `Message-ID`-nya sudah tercatat dilewati lewat `POST /api/source-refs/check`, jadi LLM cuma jalan kalau ada email baru saja.
 - `source_ref` (Message-ID) bersifat unik, sehingga email yang sama tidak pernah tercatat dua kali.
-- Transaksi dengan `confidence < 0.7` otomatis masuk antrian Review.
-- Transfer dari email tanpa `to_account` juga otomatis masuk Review, karena email tidak bisa membedakan pindah ke rekening sendiri dari kirim uang ke orang lain. Di Review pilih "Ke orang lain" (jadi pengeluaran) atau setujui apa adanya.
+- Transaksi dengan score `confidence < 0.7` otomatis masuk antrian Review.
+- Transfer dari email tanpa `to_account` juga otomatis masuk Review, karena email tidak bisa membedakan pindah ke rekening sendiri dari kirim uang ke orang lain. Di Review pilih "Ke orang lain" (untuk jadi pengeluaran).
 
 Skill agent-nya ([Hermes](https://github.com/NousResearch/hermes-agent)) ada di [`hermes/`](hermes). Cara menyambungkan email bank ke Hermes, dari bikin app password sampai cron, ada di **[docs/hermes-email.md](docs/hermes-email.md)**.
 
