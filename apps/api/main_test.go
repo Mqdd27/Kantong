@@ -462,6 +462,42 @@ func TestAssetFollowsTransactions(t *testing.T) {
 	}
 }
 
+// A credit card is a negative-balance asset: spending grows the debt, a transfer from the bank pays it down.
+func TestCreditCardLiability(t *testing.T) {
+	srv := newTestServer(t)
+	call(t, srv, "POST", "/api/assets", `{"name":"Jago","kind":"bank","balance":3000000}`, nil)
+	var cc Asset
+	if c := call(t, srv, "POST", "/api/assets", `{"name":"BCA CC","kind":"credit_card","balance":-1000000}`, &cc); c != 201 {
+		t.Fatalf("create card %d", c)
+	}
+	time.Sleep(2 * time.Second)
+	at := time.Now().Add(-time.Second).In(wib).Format(time.RFC3339)
+	call(t, srv, "POST", "/api/transactions", `{"occurred_at":"`+at+`","source":"manual","type":"out","category":"Makan","account":"BCA CC","amount":200000}`, nil)
+	call(t, srv, "POST", "/api/transactions", `{"occurred_at":"`+at+`","source":"manual","type":"transfer","category":"Transfer","account":"Jago","to_account":"BCA CC","amount":500000}`, nil)
+	var p portfolio
+	call(t, srv, "GET", "/api/assets", "", &p)
+	got := map[string]float64{}
+	for _, x := range p.Assets {
+		got[x.Name] = x.Balance
+	}
+	if got["BCA CC"] != -700000 || got["Jago"] != 2500000 || p.TotalIDR != 1800000 { // -1jt -200rb +500rb; 2.5jt - 700rb
+		t.Fatalf("balances %v total %d", got, p.TotalIDR)
+	}
+	// statement shows 750rb owed: the 50rb gap (interest/fee) lands in Review as spending
+	call(t, srv, "PATCH", "/api/assets/"+strconv.FormatInt(cc.ID, 10), `{"balance":-750000}`, nil)
+	var txs []Tx
+	call(t, srv, "GET", "/api/transactions?month="+time.Now().In(wib).Format("2006-01"), "", &txs)
+	var adj *Tx
+	for i := range txs {
+		if txs[i].Category == "Penyesuaian" {
+			adj = &txs[i]
+		}
+	}
+	if adj == nil || adj.Type != "out" || adj.Amount != 50000 || adj.Account != "BCA CC" {
+		t.Fatalf("adjustment %+v", adj)
+	}
+}
+
 // Buying a bond: the bank debit lowers Jago right away, the bond grows only when the order succeeds.
 func TestBondPurchaseFlow(t *testing.T) {
 	srv := newTestServer(t)
@@ -581,5 +617,69 @@ func TestEmailTransferWithoutDestinationNeedsReview(t *testing.T) {
 	flagged := post("<e@bank>", "")
 	if code := call(t, srv, "PATCH", "/api/transactions/"+strconv.FormatInt(flagged.ID, 10), `{"needs_review":false}`, &tx); code != 200 || tx.NeedsReview {
 		t.Fatalf("approve: %d %+v", code, tx)
+	}
+}
+
+// Due day 5: the next due date rolls over after the 5th; a missed one needs a payment after the 5th of the month before.
+func TestDebtDueStatus(t *testing.T) {
+	a, err := newApp(config{dbPath: filepath.Join(t.TempDir(), "t.db"), sessionSecret: strings.Repeat("s", 32)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.db.Close()
+	day := func(s string) time.Time {
+		d, _ := time.ParseInLocation(time.DateOnly, s, wib)
+		return d.Add(10 * time.Hour)
+	}
+	five, last := 5, 31
+	check := func(name string, x Asset, now, wantDate string, wantOver bool) {
+		t.Helper()
+		if err := a.dueStatus(context.Background(), &x, day(now)); err != nil {
+			t.Fatal(err)
+		}
+		if x.DueDate != wantDate || x.Overdue != wantOver {
+			t.Fatalf("%s: got %s overdue=%v, want %s %v", name, x.DueDate, x.Overdue, wantDate, wantOver)
+		}
+	}
+	pay := func(date string) {
+		t.Helper()
+		if err := a.insertTx(&Tx{OccurredAt: date + "T09:00:00+07:00", Amount: 100000, Type: "transfer", Category: "Transfer",
+			Account: "Jago", ToAccount: "SPayLater", Source: "manual", Currency: "IDR"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pl := Asset{Name: "SPayLater", Kind: "paylater", Balance: -500000, DueDay: &five}
+	check("before due", pl, "2026-11-03", "2026-11-05", false)
+	check("due today", pl, "2026-11-05", "2026-11-05", false)
+	check("missed", pl, "2026-11-08", "2026-12-05", true)
+	pl.Balance = 0
+	check("missed but nothing owed", pl, "2026-11-08", "2026-12-05", false)
+	pl.Balance = -500000
+	pay("2026-10-01") // belongs to the October bill
+	check("old payment only", pl, "2026-11-08", "2026-12-05", true)
+	pay("2026-10-20")
+	check("paid for this cycle", pl, "2026-11-08", "2026-12-05", false)
+	check("day 31 in February", Asset{Name: "X", Kind: "loan", Balance: -1, DueDay: &last}, "2026-02-10", "2026-02-28", false)
+}
+
+// A recurring installment is a transfer into the paylater account, so posting it pays the debt down.
+func TestRecurringTransferPaysDebt(t *testing.T) {
+	srv := newTestServer(t)
+	call(t, srv, "POST", "/api/assets", `{"name":"Jago","kind":"bank","balance":5000000}`, nil)
+	call(t, srv, "POST", "/api/assets", `{"name":"SPayLater","kind":"paylater","balance":-1500000,"due_day":5}`, nil)
+	// tomorrow 09:00 is after the balance anchor (now); "Catat" posts it ahead of time
+	tomorrow := time.Now().In(wib).AddDate(0, 0, 1).Format(time.DateOnly)
+	var rec Recurring
+	if c := call(t, srv, "POST", "/api/recurring", `{"type":"transfer","category":"Transfer","merchant":"Cicilan SPayLater","account":"Jago",
+		"to_account":"SPayLater","amount":500000,"freq":"monthly","next_date":"`+tomorrow+`"}`, &rec); c != 201 || rec.ToAccount != "SPayLater" {
+		t.Fatalf("create %d %+v", c, rec)
+	}
+	call(t, srv, "POST", "/api/recurring/"+strconv.FormatInt(rec.ID, 10)+"/advance", "", nil)
+	var p portfolio
+	call(t, srv, "GET", "/api/assets", "", &p)
+	for _, x := range p.Assets {
+		if (x.Name == "SPayLater" && (x.Balance != -1000000 || x.DueDate == "")) || (x.Name == "Jago" && x.Balance != 4500000) {
+			t.Fatalf("%+v", x)
+		}
 	}
 }

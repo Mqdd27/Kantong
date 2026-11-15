@@ -25,10 +25,13 @@ type Asset struct {
 	Maturity   *string  `json:"maturity"`    // YYYY-MM-DD, bonds/SBN
 	Payout     int      `json:"payout"`      // months between coupons (1, 3, 6, 12); 0 = none
 	Face       *float64 `json:"face"`        // bond nominal, repaid at maturity
+	DueDay     *int     `json:"due_day"`     // debts: day of month the bill is due
 	UpdatedAt  string   `json:"updated_at"`
 	// computed for responses
-	Rate     float64 `json:"rate"`      // IDR per unit of Currency
-	ValueIDR int64   `json:"value_idr"` // Balance converted to IDR
+	Rate     float64 `json:"rate"`               // IDR per unit of Currency
+	ValueIDR int64   `json:"value_idr"`          // Balance converted to IDR
+	DueDate  string  `json:"due_date,omitempty"` // next due date (YYYY-MM-DD)
+	Overdue  bool    `json:"overdue,omitempty"`  // last due date passed, still owing, no payment since the one before
 }
 
 type Order struct {
@@ -45,13 +48,18 @@ type Order struct {
 }
 
 var assetKinds = map[string]bool{"bank": true, "ewallet": true, "forex": true, "cash": true, "stock": true,
-	"bond": true, "sbn": true, "mutual_fund": true, "gold": true, "crypto": true, "other": true}
+	"bond": true, "sbn": true, "mutual_fund": true, "gold": true, "crypto": true, "other": true,
+	"credit_card": true, "paylater": true, "loan": true}
 
-const assetCols = `id, name, kind, currency, balance, invested, note, target, target_date, return_pct, maturity, payout, face, updated_at`
+// Liabilities hold a negative balance (what is owed): net worth is the plain sum, card spending
+// booked to the account makes it more negative and a transfer into it (a payment) pays it down.
+var liabilityKinds = map[string]bool{"credit_card": true, "paylater": true, "loan": true}
+
+const assetCols = `id, name, kind, currency, balance, invested, note, target, target_date, return_pct, maturity, payout, face, due_day, updated_at`
 
 func scanAsset(s scanner) (Asset, error) {
 	var x Asset
-	err := s.Scan(&x.ID, &x.Name, &x.Kind, &x.Currency, &x.Balance, &x.Invested, &x.Note, &x.Target, &x.TargetDate, &x.ReturnPct, &x.Maturity, &x.Payout, &x.Face, &x.UpdatedAt)
+	err := s.Scan(&x.ID, &x.Name, &x.Kind, &x.Currency, &x.Balance, &x.Invested, &x.Note, &x.Target, &x.TargetDate, &x.ReturnPct, &x.Maturity, &x.Payout, &x.Face, &x.DueDay, &x.UpdatedAt)
 	return x, err
 }
 
@@ -80,7 +88,7 @@ func validAsset(w http.ResponseWriter, x *Asset) bool {
 	case x.Name == "":
 		writeErr(w, http.StatusBadRequest, "name is required")
 	case !assetKinds[x.Kind]:
-		writeErr(w, http.StatusBadRequest, "kind must be one of bank, ewallet, forex, cash, stock, bond, sbn, mutual_fund, gold, crypto, other")
+		writeErr(w, http.StatusBadRequest, "kind must be one of bank, ewallet, forex, cash, stock, bond, sbn, mutual_fund, gold, crypto, other, credit_card, paylater, loan")
 	case !ok:
 		writeErr(w, http.StatusBadRequest, "currency must be a 3-letter ISO code")
 	case x.Target != nil && *x.Target <= 0:
@@ -95,6 +103,8 @@ func validAsset(w http.ResponseWriter, x *Asset) bool {
 		writeErr(w, http.StatusBadRequest, "face must be > 0")
 	case x.Maturity != nil && !validDate(*x.Maturity):
 		writeErr(w, http.StatusBadRequest, "maturity must be YYYY-MM-DD")
+	case x.DueDay != nil && (*x.DueDay < 1 || *x.DueDay > 31):
+		writeErr(w, http.StatusBadRequest, "due_day must be 1-31")
 	default:
 		return true
 	}
@@ -130,6 +140,11 @@ func (a *app) portfolio(ctx context.Context) (p portfolio, err error) {
 		x := &p.Assets[i]
 		if x.Balance, err = a.liveBalance(ctx, *x); err != nil {
 			return p, err
+		}
+		if x.DueDay != nil && liabilityKinds[x.Kind] {
+			if err = a.dueStatus(ctx, x, time.Now().In(wib)); err != nil {
+				return p, err
+			}
 		}
 		rate, err := a.idrRate(ctx, x.Currency, "")
 		if err != nil {
@@ -223,8 +238,8 @@ func (a *app) createAsset(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &x) || !validAsset(w, &x) {
 		return
 	}
-	res, err := a.db.Exec(`INSERT INTO assets (name, kind, currency, balance, invested, note, target, target_date, return_pct, maturity, payout, face) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		x.Name, x.Kind, x.Currency, x.Balance, x.Invested, x.Note, x.Target, x.TargetDate, x.ReturnPct, x.Maturity, x.Payout, x.Face)
+	res, err := a.db.Exec(`INSERT INTO assets (name, kind, currency, balance, invested, note, target, target_date, return_pct, maturity, payout, face, due_day) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		x.Name, x.Kind, x.Currency, x.Balance, x.Invested, x.Note, x.Target, x.TargetDate, x.ReturnPct, x.Maturity, x.Payout, x.Face, x.DueDay)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
 			writeErr(w, http.StatusConflict, "asset name already exists")
@@ -263,8 +278,8 @@ func (a *app) patchAsset(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().UTC().Truncate(time.Second)
 	x.UpdatedAt = now.Format(time.RFC3339)
 	_, err = a.db.Exec(`UPDATE assets SET name = ?, kind = ?, currency = ?, balance = ?, invested = ?, note = ?, target = ?, target_date = ?,
-		return_pct = ?, maturity = ?, payout = ?, face = ?, updated_at = ? WHERE id = ?`,
-		x.Name, x.Kind, x.Currency, x.Balance, x.Invested, x.Note, x.Target, x.TargetDate, x.ReturnPct, x.Maturity, x.Payout, x.Face, x.UpdatedAt, id)
+		return_pct = ?, maturity = ?, payout = ?, face = ?, due_day = ?, updated_at = ? WHERE id = ?`,
+		x.Name, x.Kind, x.Currency, x.Balance, x.Invested, x.Note, x.Target, x.TargetDate, x.ReturnPct, x.Maturity, x.Payout, x.Face, x.DueDay, x.UpdatedAt, id)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
 			writeErr(w, http.StatusConflict, "asset name already exists")
@@ -282,12 +297,12 @@ func (a *app) patchAsset(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, x)
 }
 
-// adjust records the gap between the tracked and the newly entered balance of a cash account
+// adjust records the gap between the tracked and the newly entered balance of a cash account or debt
 // (interest, admin fees, spending without an email) as a "Penyesuaian" transaction in Review,
 // so the user can give it a real category. It sits exactly on the new anchor, so it doesn't move the balance again.
 func (a *app) adjust(x Asset, tracked float64, at time.Time) error {
 	diff := int64(math.Round(x.Balance - tracked))
-	if diff == 0 || x.Currency != "IDR" || (x.Kind != "bank" && x.Kind != "ewallet" && x.Kind != "cash") {
+	if diff == 0 || x.Currency != "IDR" || (x.Kind != "bank" && x.Kind != "ewallet" && x.Kind != "cash" && !liabilityKinds[x.Kind]) {
 		return nil
 	}
 	t := Tx{OccurredAt: at.In(wib).Format(time.RFC3339), Amount: diff, Type: "in", Category: "Penyesuaian",
@@ -368,6 +383,33 @@ func (a *app) deleteAsset(w http.ResponseWriter, r *http.Request) {
 	}
 	a.assetsChanged()
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// dueOn is day `day` of the month `months` away from now, clamped to the month's last day.
+func dueOn(now time.Time, day, months int) time.Time {
+	first := time.Date(now.Year(), now.Month()+time.Month(months), 1, 0, 0, 0, 0, wib)
+	last := first.AddDate(0, 1, -1).Day()
+	return first.AddDate(0, 0, min(day, last)-1)
+}
+
+// dueStatus sets the next due date of a debt and whether the last one was missed:
+// it has passed, the account still owes, and nothing was paid into it since the due date before.
+func (a *app) dueStatus(ctx context.Context, x *Asset, now time.Time) error {
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, wib)
+	due := dueOn(now, *x.DueDay, 0)
+	if !today.After(due) {
+		x.DueDate = due.Format(time.DateOnly)
+		return nil
+	}
+	x.DueDate = dueOn(now, *x.DueDay, 1).Format(time.DateOnly)
+	if x.Balance >= 0 {
+		return nil
+	}
+	var paid int
+	err := a.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM transactions WHERE type = 'transfer' AND lower(to_account) = lower(?)
+		AND needs_review = 0 AND substr(occurred_at, 1, 10) > ?`, strings.TrimSpace(x.Name), dueOn(now, *x.DueDay, -1).Format(time.DateOnly)).Scan(&paid)
+	x.Overdue = paid == 0
+	return err
 }
 
 // liveBalance is the stored balance plus transactions booked to an account of the same name

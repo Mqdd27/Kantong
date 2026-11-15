@@ -23,6 +23,7 @@ const KIND = {
   bank: ['bank', 'blue'], ewallet: ['wallet', 'purple'], forex: ['globe', 'teal'], cash: ['cash', 'green'],
   stock: ['trend', 'orange'], bond: ['doc', 'violet'], sbn: ['doc', 'pink'], mutual_fund: ['pie', 'blue'],
   gold: ['gold', 'amber'], crypto: ['hex', 'orange'], other: ['grid', 'slate'],
+  credit_card: ['wallet', 'red'], paylater: ['receipt', 'red'], loan: ['doc', 'red'],
 }
 export const kindLook = (kind) => {
   const [icon, hue] = KIND[kind] ?? KIND.other

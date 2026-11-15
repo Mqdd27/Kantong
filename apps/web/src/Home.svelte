@@ -52,7 +52,7 @@
     <div class="tiles">
       <a class="card tile" href="#/assets">
         <span class="avatar sm" style:--hue="var(--h-blue)"><Icon name="wallet" size={18} /></span>
-        <span class="lbl">Total aset</span>
+        <span class="lbl">{s.portfolio.assets.some((a) => a.value_idr < 0) ? 'Kekayaan bersih' : 'Total aset'}</span>
         <b class="num">{fmtIDR.format(s.portfolio.total_idr)}</b>
       </a>
       <a class="card tile" href="#/analytics">

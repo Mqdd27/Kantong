@@ -22,7 +22,7 @@ Config comes from `~/.hermes/.env`: `FINANCE_API_URL`, `FINANCE_API_TOKEN` (same
 
 ## Fields
 `name, kind, currency (default IDR), balance, invested, note` for every asset. Numbers are plain (no "Rp", no thousand separators).
-`kind`: `bank, ewallet, cash, forex, stock, bond, sbn, mutual_fund, gold, crypto, other` (check the list output for what the user already uses).
+`kind`: `bank, ewallet, cash, forex, stock, bond, sbn, mutual_fund, gold, crypto, other, credit_card, paylater, loan` (check the list output for what the user already uses).
 
 | Product | Fields |
 |---|---|
@@ -32,6 +32,7 @@ Config comes from `~/.hermes/.env`: `FINANCE_API_URL`, `FINANCE_API_TOKEN` (same
 | Gold (Pegadaian, Antam, Bibit Emas…) | `kind:"gold"`, `currency:"XAU"`; `balance` = **grams** (Kantong prices it daily); `invested` = modal in **IDR** |
 | Stock (total) | `kind:"stock"`; `balance`, `invested` |
 | Bank / e-wallet | `balance`; for bank `return_pct` = bunga % per tahun if shown |
+| Credit card / paylater / loan | `kind:"credit_card"`, `"paylater"` or `"loan"`; `balance` = amount still owed as a **negative** number (tagihan Rp2.350.000 → `-2350000`); no `invested`; `due_day` = tanggal jatuh tempo (1–31) if shown |
 
 ## Pitfalls
 - Bond `balance` needs **Total Keuntungan** from the "Detail Portofolio" page (can be negative). The summary card only shows Kupon Berjalan / Kupon Harian, which are NOT the profit: using them gives a wrong balance. Only the card sent → ask for the Detail screenshot, or propose balance = modal and say so.

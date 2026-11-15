@@ -69,6 +69,7 @@ Planned defaults (from user spec, not from emails):
   `currency` = ISO code, `orig_amount` = the foreign amount as a number (dot decimal: "USD 20.00" -> 20.0).
 - If the email also shows the IDR debited (kurs/"setara"/"Rp ..."), put it in `amount` (int rupiah). Otherwise omit `amount`.
 - Subscription to Claude/Anthropic -> out / Tagihan, merchant "Claude".
+- Paying a credit card / paylater / loan bill whose account exists as a Kantong asset of kind `credit_card`, `paylater` or `loan` -> type transfer / Transfer, to_account = that asset's name (NOT out / Tagihan: the spending was already booked when the card was used). Spending with that card -> out, account = the card's asset name.
 - Buying foreign currency into an own forex pocket (IDR -> SGD etc.) -> type transfer / Transfer, amount = IDR debited.
 
 ## Investment orders (Bibit, Stockbit, SBN via any app) -> `orders`, not `transactions`

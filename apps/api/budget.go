@@ -177,6 +177,7 @@ type Recurring struct {
 	Category   string   `json:"category"`
 	Merchant   string   `json:"merchant"`
 	Account    string   `json:"account"`
+	ToAccount  string   `json:"to_account"` // transfers only: own destination account
 	Note       string   `json:"note"`
 	Amount     int64    `json:"amount"`
 	Currency   string   `json:"currency"`
@@ -188,11 +189,11 @@ type Recurring struct {
 	day        int
 }
 
-const recCols = `id, type, category, merchant, account, note, amount, currency, orig_amount, freq, next_date, auto, day, mask`
+const recCols = `id, type, category, merchant, account, to_account, note, amount, currency, orig_amount, freq, next_date, auto, day, mask`
 
 func scanRec(s scanner) (Recurring, error) {
 	var x Recurring
-	err := s.Scan(&x.ID, &x.Type, &x.Category, &x.Merchant, &x.Account, &x.Note, &x.Amount, &x.Currency, &x.OrigAmount,
+	err := s.Scan(&x.ID, &x.Type, &x.Category, &x.Merchant, &x.Account, &x.ToAccount, &x.Note, &x.Amount, &x.Currency, &x.OrigAmount,
 		&x.Freq, &x.NextDate, &x.Auto, &x.day, &x.Mask)
 	return x, err
 }
@@ -247,7 +248,7 @@ func (x Recurring) next(date string) string {
 func (x Recurring) tx(date string) Tx {
 	ref := fmt.Sprintf("recurring:%d:%s", x.ID, date)
 	return Tx{OccurredAt: date + "T09:00:00+07:00", Amount: x.Amount, Type: x.Type, Category: x.Category,
-		Merchant: x.Merchant, Account: x.Account, Note: x.Note, Source: "manual", SourceRef: &ref,
+		Merchant: x.Merchant, Account: x.Account, ToAccount: x.ToAccount, Note: x.Note, Source: "manual", SourceRef: &ref,
 		Currency: x.Currency, OrigAmount: x.OrigAmount}
 }
 
@@ -321,7 +322,7 @@ func (a *app) checkRec(w http.ResponseWriter, r *http.Request, x *Recurring) boo
 	if !a.validateTx(w, r, &t) {
 		return false
 	}
-	x.Merchant, x.Account, x.Note, x.Currency, x.OrigAmount = t.Merchant, t.Account, t.Note, t.Currency, t.OrigAmount
+	x.Merchant, x.Account, x.ToAccount, x.Note, x.Currency, x.OrigAmount = t.Merchant, t.Account, t.ToAccount, t.Note, t.Currency, t.OrigAmount
 	if x.Currency == "IDR" {
 		x.Amount = t.Amount
 	}
@@ -337,8 +338,8 @@ func (a *app) createRecurring(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &x) || !a.checkRec(w, r, &x) {
 		return
 	}
-	res, err := a.db.Exec(`INSERT INTO recurring (type, category, merchant, account, note, amount, currency, orig_amount, freq, day, next_date, auto, mask)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, x.Type, x.Category, x.Merchant, x.Account, x.Note, x.Amount, x.Currency,
+	res, err := a.db.Exec(`INSERT INTO recurring (type, category, merchant, account, to_account, note, amount, currency, orig_amount, freq, day, next_date, auto, mask)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, x.Type, x.Category, x.Merchant, x.Account, x.ToAccount, x.Note, x.Amount, x.Currency,
 		x.OrigAmount, x.Freq, x.day, x.NextDate, x.Auto, x.Mask)
 	if err != nil {
 		a.fail(w, err)
@@ -371,8 +372,8 @@ func (a *app) patchRecurring(w http.ResponseWriter, r *http.Request) {
 	if !ok || !decode(w, r, &x) || !a.checkRec(w, r, &x) {
 		return
 	}
-	_, err := a.db.Exec(`UPDATE recurring SET type = ?, category = ?, merchant = ?, account = ?, note = ?, amount = ?, currency = ?,
-		orig_amount = ?, freq = ?, day = ?, next_date = ?, auto = ?, mask = ? WHERE id = ?`, x.Type, x.Category, x.Merchant, x.Account, x.Note,
+	_, err := a.db.Exec(`UPDATE recurring SET type = ?, category = ?, merchant = ?, account = ?, to_account = ?, note = ?, amount = ?, currency = ?,
+		orig_amount = ?, freq = ?, day = ?, next_date = ?, auto = ?, mask = ? WHERE id = ?`, x.Type, x.Category, x.Merchant, x.Account, x.ToAccount, x.Note,
 		x.Amount, x.Currency, x.OrigAmount, x.Freq, x.day, x.NextDate, x.Auto, x.Mask, x.ID)
 	if err != nil {
 		a.fail(w, err)

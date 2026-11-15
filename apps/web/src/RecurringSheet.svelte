@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte'
-  import { s, fmtNum, CURRENCIES, DAYS, MONTHS, act } from './lib/store.svelte.js'
+  import { s, fmtNum, CURRENCIES, DAYS, MONTHS, act, loadAssets } from './lib/store.svelte.js'
 
   /** rec = undefined → add, otherwise edit */
   let { rec, onclose } = $props()
@@ -19,6 +19,8 @@
   const toggle = (i) => (mask ^= 1 << i)
   const WEEK = [1, 2, 3, 4, 5, 6, 0] // Senin dulu
   let note = $state(rec?.note ?? '')
+  let account = $state(rec?.account ?? '')
+  let toAccount = $state(rec?.to_account ?? '')
 
   const foreign = $derived(currency !== 'IDR')
   const amount = $derived(Number(amountText.replace(/\D/g, '')))
@@ -26,11 +28,14 @@
   $effect(() => {
     if (cats.length && !cats.some((c) => c.name === category)) category = cats[0].name
   })
-  onMount(() => dialog.showModal())
+  onMount(() => {
+    dialog.showModal()
+    if (!s.portfolio.assets.length) loadAssets() // account suggestions
+  })
 
   async function save(e) {
     e.preventDefault()
-    const body = { type, category, merchant, currency, freq, next_date: next, auto, note, amount: foreign ? 0 : amount, mask: freq === 'yearly' ? 0 : mask }
+    const body = { type, category, merchant, currency, freq, next_date: next, auto, note, account, to_account: type === 'transfer' ? toAccount : '', amount: foreign ? 0 : amount, mask: freq === 'yearly' ? 0 : mask }
     if (foreign) body.orig_amount = Number(orig)
     if (await act(rec ? `/recurring/${rec.id}` : '/recurring', rec ? 'PATCH' : 'POST', body)) dialog.close()
   }
@@ -43,11 +48,24 @@
   <form onsubmit={save}>
     <h2>{rec ? 'Edit transaksi berulang' : 'Transaksi berulang baru'}</h2>
     <div class="types seg">
-      {#each [['out', 'Keluar'], ['in', 'Masuk']] as [v, label]}
+      {#each [['out', 'Keluar'], ['in', 'Masuk'], ['transfer', 'Transfer']] as [v, label]}
         <button type="button" aria-pressed={type === v} onclick={() => (type = v)}>{label}</button>
       {/each}
     </div>
-    <label>Nama <input bind:value={merchant} placeholder="mis. Claude Pro, Gaji, Internet" required autocomplete="off" /></label>
+    <label>Nama <input bind:value={merchant} placeholder={type === 'transfer' ? 'mis. Cicilan SPayLater' : 'mis. Claude Pro, Gaji, Internet'} required autocomplete="off" /></label>
+    <div class="two">
+      <label>{type === 'transfer' ? 'Dari akun' : 'Akun'}
+        <input bind:value={account} list="rec-accounts" autocomplete="off" placeholder="mis. Jago" />
+      </label>
+      {#if type === 'transfer'}
+        <label>Ke akun
+          <input bind:value={toAccount} list="rec-accounts" autocomplete="off" placeholder="mis. SPayLater" required />
+        </label>
+      {/if}
+    </div>
+    <datalist id="rec-accounts">
+      {#each s.portfolio.assets as a}<option value={a.name}></option>{/each}
+    </datalist>
     <div class="two">
       <label>Mata uang
         <select bind:value={currency}>{#each CURRENCIES as c}<option>{c}</option>{/each}</select>

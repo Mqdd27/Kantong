@@ -11,7 +11,10 @@
   const KINDS = {
     bank: 'Bank', ewallet: 'E-wallet', forex: 'Valas', cash: 'Tunai', stock: 'Saham', bond: 'Obligasi',
     sbn: 'SBN', mutual_fund: 'Reksa dana', gold: 'Emas', crypto: 'Kripto', other: 'Lainnya',
+    credit_card: 'Kartu kredit', paylater: 'Paylater', loan: 'Pinjaman',
   }
+  // debts: stored as a negative balance, entered and shown as the amount owed
+  const DEBT = new Set(['credit_card', 'paylater', 'loan'])
 
   const BONDS = new Set(['bond', 'sbn']) // payout + maturity instead of a savings goal
   const PAYOUT = { 1: 'bulan', 3: '3 bulan', 6: '6 bulan', 12: 'tahun' } // months between coupons; 0 = none
@@ -31,6 +34,8 @@
     }
     return [...m.values()].sort((a, b) => b.total - a.total)
   })
+  const gross = $derived(groups.reduce((n, g) => n + Math.max(g.total, 0), 0))
+  const debt = $derived(groups.reduce((n, g) => n + (DEBT.has(g.kind) ? -g.total : 0), 0))
 
   // edit sheet: null = closed, {} = new, asset = edit
   let edit = $state(null)
@@ -41,15 +46,15 @@
   })
   function openEdit(a) {
     f = a
-      ? { ...a, invested: a.invested ?? '', target: a.target ?? '', target_date: a.target_date ?? '', return_pct: a.return_pct ?? '', maturity: a.maturity ?? '', face: a.face ?? '' }
-      : { name: '', kind: 'bank', currency: 'IDR', balance: '', invested: '', note: '', target: '', target_date: '', return_pct: '', maturity: '', payout: 0, face: '' }
+      ? { ...a, balance: DEBT.has(a.kind) ? -a.balance : a.balance, invested: a.invested ?? '', target: a.target ?? '', target_date: a.target_date ?? '', return_pct: a.return_pct ?? '', maturity: a.maturity ?? '', face: a.face ?? '', due_day: a.due_day ?? '' }
+      : { name: '', kind: 'bank', currency: 'IDR', balance: '', invested: '', note: '', target: '', target_date: '', return_pct: '', maturity: '', payout: 0, face: '', due_day: '' }
     edit = a ?? {}
     // cash-like accounts open on their history, investments on the edit form
     tab = a && CASHLIKE.has(a.kind) ? 'history' : 'edit'
     act = null
     if (a) api(`/assets/${a.id}/activity`).then((r) => (act = r)).catch(() => (act = { transactions: [], orders: [] }))
   }
-  const CASHLIKE = new Set(['bank', 'ewallet', 'forex', 'cash'])
+  const CASHLIKE = new Set(['bank', 'ewallet', 'forex', 'cash', ...DEBT])
   const STATUS = { pending: 'menunggu', success: 'berhasil', failed: 'gagal' }
   let tab = $state('edit')
   let act = $state(null)
@@ -98,16 +103,28 @@
     return txt
   }
 
+  const fmtDue = new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'short', timeZone: 'UTC' })
+  // debts: next due date, days left, and a missed payment flagged by the server
+  function due(a) {
+    if (a.overdue) return { txt: `Telat bayar · jatuh tempo tgl ${a.due_day} sudah lewat`, cls: 'out' }
+    const today = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10) // WIB
+    const n = Math.round((new Date(a.due_date) - new Date(today)) / 864e5)
+    const txt = `Jatuh tempo ${fmtDue.format(new Date(a.due_date + 'T00:00:00Z'))} · ${n ? `${n} hari lagi` : 'hari ini'}`
+    return { txt, cls: n <= 3 && a.balance < 0 ? 'warn' : '' }
+  }
+
   async function save(e) {
     e.preventDefault()
-    const body = { name: f.name, kind: f.kind, currency: f.currency, balance: Number(f.balance) || 0, note: f.note,
-      invested: f.invested === '' || f.invested == null ? null : Number(f.invested),
-      target: !BONDS.has(f.kind) && Number(f.target) > 0 ? Number(f.target) : null,
-      target_date: !BONDS.has(f.kind) && f.target ? f.target_date || null : null,
+    const isDebt = DEBT.has(f.kind)
+    const body = { name: f.name, kind: f.kind, currency: f.currency, balance: (isDebt ? -1 : 1) * (Number(f.balance) || 0), note: f.note,
+      invested: isDebt || f.invested === '' || f.invested == null ? null : Number(f.invested),
+      target: !isDebt && !BONDS.has(f.kind) && Number(f.target) > 0 ? Number(f.target) : null,
+      target_date: !isDebt && !BONDS.has(f.kind) && f.target ? f.target_date || null : null,
       return_pct: !RETURNS.has(f.kind) || f.return_pct === '' || f.return_pct == null ? null : Number(f.return_pct),
       maturity: BONDS.has(f.kind) ? f.maturity || null : null,
       payout: BONDS.has(f.kind) ? Number(f.payout) || 0 : 0,
-      face: BONDS.has(f.kind) && Number(f.face) > 0 ? Number(f.face) : null }
+      face: BONDS.has(f.kind) && Number(f.face) > 0 ? Number(f.face) : null,
+      due_day: isDebt && Number(f.due_day) > 0 ? Number(f.due_day) : null }
     if (await saveAsset(edit.id, body)) dialog.close()
   }
   async function del() {
@@ -122,12 +139,15 @@
 
 <div class="top">
 <section class="card hero">
-  <span class="head">Total aset</span>
+  <span class="head">{debt ? 'Kekayaan bersih' : 'Total aset'}</span>
   <b class="num">{fmtIDR.format(s.portfolio.total_idr)}</b>
-  {#if s.portfolio.total_idr > 0}
+  {#if debt}
+    <span class="split">Aset {fmtIDR.format(gross)} · <span class="out">Utang {fmtIDR.format(debt)}</span></span>
+  {/if}
+  {#if gross > 0}
     <ul class="alloc" aria-label="Alokasi per jenis">
       {#each groups.filter((g) => g.total > 0) as g}
-        {@const pct = (g.total / s.portfolio.total_idr) * 100}
+        {@const pct = (g.total / gross) * 100}
         <li>
           <span>{KINDS[g.kind]}</span>
           <span class="bar"><span class="grow" style:width="{pct}%" style:background={kindLook(g.kind).hue}></span></span>
@@ -162,7 +182,7 @@
 {#each groups as g}
   {@const look = kindLook(g.kind)}
   <section class="card list group">
-  <h3><span>{KINDS[g.kind]}</span><span class="num">{fmtIDR.format(g.total)}</span></h3>
+  <h3><span>{KINDS[g.kind]}</span><span class="num" class:out={g.total < 0}>{fmtIDR.format(g.total)}</span></h3>
   {#each g.items as a}
     <button class="row" onclick={() => openEdit(a)}>
       <span class="avatar" style:--hue={look.hue}><Icon name={look.icon} /></span>
@@ -172,6 +192,10 @@
           {#if a.currency !== 'IDR'}{fmtCur(a.balance, a.currency)} · 1 {a.currency === 'XAU' ? 'gram' : a.currency} = {fmtIDR.format(a.rate)}{/if}
           {#if a.invested}{a.currency !== 'IDR' ? ' · ' : ''}modal {fmtCur(a.invested, a.currency === 'XAU' ? 'IDR' : a.currency)}{/if}
         </span>
+        {#if a.due_date}
+          {@const d = due(a)}
+          <span class="meta {d.cls}">{d.txt}</span>
+        {/if}
         {#if a.return_pct != null && RETURNS.has(a.kind)}<span class="meta proj">{proj(a)}</span>{/if}
         {#if a.target}
           {@const g = goal(a)}
@@ -184,9 +208,9 @@
           </span>
         {/if}
       </span>
-      <span class="val">
+      <span class="val" class:out={a.value_idr < 0}>
         {fmtIDR.format(a.value_idr)}
-        {#if a.invested}
+        {#if a.invested && !DEBT.has(a.kind)}
           {@const pl = ((a.currency === 'XAU' ? a.value_idr : a.balance) - a.invested) / a.invested}
           <small class:in={pl >= 0} class:out={pl < 0}>{pl >= 0 ? '+' : ''}{(pl * 100).toFixed(1)}%</small>
         {/if}
@@ -195,7 +219,7 @@
   {/each}
   </section>
 {:else}
-  <p class="card empty">Belum ada aset. Tambah rekening, valas, saham (total nilai), obligasi, SBN, dll.</p>
+  <p class="card empty">Belum ada aset. Tambah rekening, valas, saham (total nilai), obligasi, SBN, kartu kredit, dll.</p>
 {/each}
 </div>
 
@@ -246,13 +270,22 @@
       {#if f.kind === 'gold' && f.currency !== 'XAU'}
         <small class="hint">Pilih mata uang <b>Emas (gram)</b> lalu isi jumlah gram, biar nilainya ikut harga emas harian.</small>
       {/if}
-      <label>{f.currency === 'XAU' ? 'Jumlah (gram)' : `Nilai sekarang (${f.currency})`}
+      <label>{f.currency === 'XAU' ? 'Jumlah (gram)' : DEBT.has(f.kind) ? `Sisa utang (${f.currency})` : `Nilai sekarang (${f.currency})`}
         <input type="number" inputmode="decimal" step="any" bind:value={f.balance} required />
       </label>
+      {#if DEBT.has(f.kind)}
+        <label>Tanggal jatuh tempo (1–31), opsional
+          <input type="number" inputmode="numeric" min="1" max="31" bind:value={f.due_day} placeholder="mis. 5" />
+        </label>
+        <small class="hint">Isi jumlah yang masih harus dibayar. Belanja dengan akun “{f.name || 'nama ini'}” menambah utang; bayar tagihan = transaksi Transfer dari rekening ke akun ini. Cicilan rutin: buat transaksi berulang jenis Transfer ke akun ini di Budget. Bunga/denda: update sisa utang sesuai tagihan, selisihnya masuk Review.</small>
+      {:else}
       <label>Modal / total disetor ({f.currency === 'XAU' ? 'IDR' : f.currency}), opsional
         <input type="number" inputmode="decimal" step="any" bind:value={f.invested} />
       </label>
-      {#if BONDS.has(f.kind)}
+      {/if}
+      {#if DEBT.has(f.kind)}
+        <!-- no modal, return or savings goal for debts -->
+      {:else if BONDS.has(f.kind)}
         <div class="two">
           <label>Return (% per tahun)
             <input type="number" inputmode="decimal" step="any" bind:value={f.return_pct} placeholder="mis. 6,25" />
@@ -381,6 +414,10 @@
   }
   .proj {
     color: var(--accent);
+  }
+  .split {
+    font-size: 13px;
+    color: var(--muted);
   }
   .hint {
     margin-top: -6px;
