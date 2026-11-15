@@ -40,5 +40,6 @@ Config comes from `~/.hermes/.env`: `FINANCE_API_URL`, `FINANCE_API_TOKEN` (same
 - Coupons already received (cash in the bank) and Kupon Penjual are not added to `balance`.
 - Coupon rate / maturity not on the screenshot: look them up (KSEI or BCA series page), not the yield shown in the app. Monthly-coupon SBN (SR/ORI/ST) → `payout:1`; unknown unit count → say `face` is assumed.
 - Cash moves (e.g. friend swaps balance for cash) change the `Cash`/bank asset balances; check the asset list after any such correction.
+- A user message like "Update asset X" with a screenshot is a request to propose, not to write: show the values and wait for "ok" (step 3) even when the numbers look obvious.
 
 Skip anything you cannot read clearly and say which field was unclear. Never store account numbers.
