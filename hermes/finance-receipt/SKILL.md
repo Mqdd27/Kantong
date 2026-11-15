@@ -35,5 +35,6 @@ Config from `~/.hermes/.env`: `FINANCE_API_URL`, `FINANCE_API_TOKEN` (same as fi
 - Split bill (patungan): the full payment stays as the user's `out`; the friend's share is a separate `in` (category `Refund`, merchant = friend, account = where it was received, note names the items).
 - Swapping balance for cash with a friend: the transfer is `transfer` from the paying account to `Cash` (cash received), and the friend's share is another `in` to `Cash`.
 - Transfers to a friend are NOT own-account transfers: clear `to_account` and `merchant`, set `needs_review:true`. Never take `to_account` from a bank's generic "X to Y" label.
-- Transactions: `PATCH /api/transactions/{id}` works. Rules (`/api/rules`) have only GET/POST/DELETE: to change a rule, DELETE it then POST it again.
+- Transactions: `PATCH /api/transactions/{id}` works. Rules: `PATCH /api/rules/{id}` edits `pattern`/`type`/`category` in place on current Kantong builds. If it answers 405 (older deploy), DELETE the rule then POST it again (the id changes). The server also flags email transfers without `to_account` as Review on current builds; still clear `to_account`/`merchant` yourself when fixing one.
+- Kantong code changes (new endpoints, UI) only reach the running app after a rebuild/redeploy: merging to `main` is not enough, so tell the user when a fix is merged but not live.
 - Category hints: pulsa, paket data, token listrik, internet, air → `Tagihan`. After the user fixes a category in-app, check `/api/rules` matches it (a rule pointing elsewhere re-categorises future ones).
