@@ -9,6 +9,7 @@ umask 077
 SRC=${SRC:-/var/lib/docker/volumes/kantong_money-data/_data/backups}
 DEST=${DEST:?set DEST to a dir on another disk (/mnt/usb/kantong) or an rclone remote (gdrive:kantong)}
 RECIPIENT=${AGE_RECIPIENT:?set AGE_RECIPIENT to your age public key (age1...)}
+case $RECIPIENT in age1*) ;; *) echo "AGE_RECIPIENT must be the public key (age1...); the private key stays off this server" >&2; exit 1 ;; esac
 
 latest=$(ls "$SRC"/money-*.db 2>/dev/null | sort | tail -n 1) # dated names sort by date
 [ -n "$latest" ] || { echo "no money-*.db in $SRC" >&2; exit 1; }

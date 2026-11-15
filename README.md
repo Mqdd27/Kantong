@@ -196,3 +196,11 @@ docker run --rm -v kantong_money-data:/data -v "$PWD":/in alpine sh -c \
 docker compose start
 rm money.db money.db.age kantong.key                                # jangan tinggalkan data & key di server
 ```
+
+Tes restore (sebulan sekali, di laptop, bukan di server): `scripts/restore-test.sh` ambil salinan terbaru, decrypt pakai private key, lalu cek `integrity_check`, tabel utama ada, dan umurnya tidak lebih dari 3 hari. Tidak ada yang di-restore ke app. Script menolak jalan kalau mendeteksi dirinya di server Kantong, dan `offsite-backup.sh` menolak `AGE_RECIPIENT` yang bukan public key (`age1...`), jadi private key tidak perlu (dan tidak boleh) ada di server.
+
+```sh
+brew install age sqlite rclone                                   # sekali, di laptop
+KEY=~/kantong.key scripts/restore-test.sh gdrive:kantong          # atau /Volumes/usb/kantong, atau satu file .age
+# restore ok: 1234 transactions, 9 assets, newest 2026-11-15
+```
