@@ -370,9 +370,16 @@ func (a *app) deleteTx(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, err)
 		return
 	}
+	// one transaction: a failure halfway must not leave a split with no head or a lost email ref
+	tx, err := a.db.Begin()
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	defer tx.Rollback()
 	var siblings []int64
 	if t.SplitOf != nil {
-		rows, err := a.db.Query(`SELECT id FROM transactions WHERE split_of = ? AND id != ?`, *t.SplitOf, t.ID)
+		rows, err := tx.Query(`SELECT id FROM transactions WHERE split_of = ? AND id != ?`, *t.SplitOf, t.ID)
 		if err != nil {
 			a.fail(w, err)
 			return
@@ -384,12 +391,12 @@ func (a *app) deleteTx(w http.ResponseWriter, r *http.Request) {
 		}
 		rows.Close()
 	}
-	if _, err := a.db.Exec(`DELETE FROM transactions WHERE id = ?`, id); err != nil {
+	if _, err := tx.Exec(`DELETE FROM transactions WHERE id = ?`, id); err != nil {
 		a.fail(w, err)
 		return
 	}
 	if t.SplitOf != nil {
-		kept, err := a.unsplitAfterDelete(t)
+		kept, err := unsplitAfterDelete(tx, t)
 		if err != nil {
 			a.fail(w, err)
 			return
@@ -397,17 +404,21 @@ func (a *app) deleteTx(w http.ResponseWriter, r *http.Request) {
 		if kept {
 			t.SourceRef = nil // a remaining part now carries the email's ref
 		}
-		for _, sid := range siblings { // their split_of / source_ref may have changed
-			if x, err := a.getTx(sid); err == nil {
-				a.hub.publish("transaction.updated", x)
-			}
-		}
 	}
 	if t.SourceRef != nil && *t.SourceRef != "" {
 		// otherwise the email cron sees the Message-ID as new again and re-imports it
-		if _, err := a.db.Exec(`INSERT OR IGNORE INTO deleted_refs (ref) VALUES (?)`, *t.SourceRef); err != nil {
+		if _, err := tx.Exec(`INSERT OR IGNORE INTO deleted_refs (ref) VALUES (?)`, *t.SourceRef); err != nil {
 			a.fail(w, err)
 			return
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		a.fail(w, err)
+		return
+	}
+	for _, sid := range siblings { // their split_of / source_ref may have changed
+		if x, err := a.getTx(sid); err == nil {
+			a.hub.publish("transaction.updated", x)
 		}
 	}
 	a.hub.publish("transaction.deleted", t)
@@ -552,23 +563,23 @@ func (a *app) splitTx(w http.ResponseWriter, r *http.Request) {
 // unsplitAfterDelete keeps a split consistent after one part was deleted: when the original row goes,
 // the next part takes over its id role and source_ref; a single remaining part is a plain row again.
 // It reports whether another part still holds the deleted row's source_ref.
-func (a *app) unsplitAfterDelete(t Tx) (bool, error) {
+func unsplitAfterDelete(tx *sql.Tx, t Tx) (bool, error) {
 	g, moved := *t.SplitOf, false
 	if g == t.ID {
 		var next int64
-		err := a.db.QueryRow(`SELECT COALESCE(MIN(id), 0) FROM transactions WHERE split_of = ?`, g).Scan(&next)
+		err := tx.QueryRow(`SELECT COALESCE(MIN(id), 0) FROM transactions WHERE split_of = ?`, g).Scan(&next)
 		if err != nil || next == 0 {
 			return false, err
 		}
-		if _, err := a.db.Exec(`UPDATE transactions SET split_of = ? WHERE split_of = ?`, next, g); err != nil {
+		if _, err := tx.Exec(`UPDATE transactions SET split_of = ? WHERE split_of = ?`, next, g); err != nil {
 			return false, err
 		}
-		if _, err := a.db.Exec(`UPDATE transactions SET source_ref = ? WHERE id = ?`, t.SourceRef, next); err != nil {
+		if _, err := tx.Exec(`UPDATE transactions SET source_ref = ? WHERE id = ?`, t.SourceRef, next); err != nil {
 			return false, err
 		}
 		g, moved = next, true
 	}
-	_, err := a.db.Exec(`UPDATE transactions SET split_of = NULL WHERE split_of = ?1 AND (SELECT COUNT(*) FROM transactions WHERE split_of = ?1) = 1`, g)
+	_, err := tx.Exec(`UPDATE transactions SET split_of = NULL WHERE split_of = ?1 AND (SELECT COUNT(*) FROM transactions WHERE split_of = ?1) = 1`, g)
 	return moved && t.SourceRef != nil, err
 }
 

@@ -20,6 +20,12 @@ const token = "test-token"
 
 func newTestServer(t *testing.T) *httptest.Server {
 	t.Helper()
+	_, srv := newTestApp(t)
+	return srv
+}
+
+func newTestApp(t *testing.T) (*app, *httptest.Server) {
+	t.Helper()
 	fx := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/price/XAU" {
 			w.Write([]byte(`{"price":3110.34768}`)) // 100 USD per gram
@@ -41,7 +47,7 @@ func newTestServer(t *testing.T) *httptest.Server {
 	}
 	srv := httptest.NewServer(a.routes())
 	t.Cleanup(func() { srv.Close(); a.db.Close() })
-	return srv
+	return a, srv
 }
 
 func call(t *testing.T, srv *httptest.Server, method, path, body string, out any) int {
@@ -751,5 +757,85 @@ func TestSplitTransaction(t *testing.T) {
 	}
 	if n, sum, _ := month(); n != 1 || sum != 100000 {
 		t.Fatalf("after merge %d %d", n, sum)
+	}
+}
+
+// A split or delete that fails halfway rolls back: the parts, totals and email ref stay as they were.
+func TestSplitRollback(t *testing.T) {
+	a, srv := newTestApp(t)
+	var tx Tx
+	call(t, srv, "POST", "/api/transactions", `{"occurred_at":"2026-11-07T12:30:00+07:00","amount":150000,"type":"out","category":"Jajan",
+		"merchant":"Indomaret","account":"BCA","source":"email","source_ref":"<r1@bca>","confidence":0.9}`, &tx)
+	path := "/api/transactions/" + strconv.FormatInt(tx.ID, 10)
+	if c := call(t, srv, "POST", path+"/split", `{"parts":[{"category":"Jajan","amount":50000},{"category":"Belanja","amount":100000}]}`, nil); c != 200 {
+		t.Fatalf("split %d", c)
+	}
+	snapshot := func() string {
+		var txs []Tx
+		call(t, srv, "GET", "/api/transactions?month=2026-11", "", &txs)
+		b, _ := json.Marshal(txs)
+		return string(b)
+	}
+	before := snapshot()
+	exec := func(q string) {
+		t.Helper()
+		if _, err := a.db.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// the third part's INSERT fails after the old parts were already deleted and the head updated
+	exec(`CREATE TRIGGER boom BEFORE INSERT ON transactions WHEN NEW.category = 'Tagihan' BEGIN SELECT RAISE(ABORT, 'boom'); END`)
+	if c := call(t, srv, "POST", path+"/split", `{"parts":[{"category":"Jajan","amount":30000},{"category":"Belanja","amount":70000},{"category":"Tagihan","amount":50000}]}`, nil); c != 500 {
+		t.Fatalf("failing split: %d", c)
+	}
+	if after := snapshot(); after != before {
+		t.Fatalf("split not rolled back:\n%s\n%s", before, after)
+	}
+	// deleting the head fails while handing its email ref to the next part
+	exec(`CREATE TRIGGER boom2 BEFORE UPDATE OF source_ref ON transactions BEGIN SELECT RAISE(ABORT, 'boom'); END`)
+	if c := call(t, srv, "DELETE", path, "", nil); c != 500 {
+		t.Fatalf("failing delete: %d", c)
+	}
+	if after := snapshot(); after != before {
+		t.Fatalf("delete not rolled back:\n%s\n%s", before, after)
+	}
+	// rules that are checked before anything is written
+	call(t, srv, "POST", "/api/transactions", `{"occurred_at":"2026-11-08T10:00:00+07:00","source":"manual","type":"transfer","category":"Transfer",
+		"account":"BCA","to_account":"Jago","amount":100000}`, &tx)
+	if c := call(t, srv, "POST", "/api/transactions/"+strconv.FormatInt(tx.ID, 10)+"/split", `{"parts":[{"category":"Transfer","amount":100000}]}`, nil); c != 400 {
+		t.Fatalf("transfer split: %d", c)
+	}
+	if c := call(t, srv, "POST", path+"/split", `{"parts":[]}`, nil); c != 400 {
+		t.Fatalf("empty parts: %d", c)
+	}
+}
+
+// due_day is 1-31, and an auto recurring transfer into a debt posts once per date, however often the cron runs.
+func TestDebtDueDayAndAutoInstallment(t *testing.T) {
+	a, srv := newTestApp(t)
+	for _, d := range []string{"0", "32"} {
+		if c := call(t, srv, "POST", "/api/assets", `{"name":"Kredivo","kind":"paylater","balance":-100000,"due_day":`+d+`}`, nil); c != 400 {
+			t.Fatalf("due_day %s: %d", d, c)
+		}
+	}
+	call(t, srv, "POST", "/api/assets", `{"name":"Jago","kind":"bank","balance":5000000}`, nil)
+	call(t, srv, "POST", "/api/assets", `{"name":"Kredivo","kind":"paylater","balance":-1500000,"due_day":5}`, nil)
+	now := time.Now().In(wib)
+	var rec Recurring
+	if c := call(t, srv, "POST", "/api/recurring", `{"type":"transfer","category":"Transfer","merchant":"Cicilan Kredivo","account":"Jago",
+		"to_account":"Kredivo","amount":500000,"freq":"monthly","auto":true,"next_date":"`+now.Format(time.DateOnly)+`"}`, &rec); c != 201 {
+		t.Fatalf("create %d", c)
+	}
+	a.postDue(context.Background()) // the hourly cron, after create already posted today's
+	a.postDue(context.Background())
+	var txs []Tx
+	call(t, srv, "GET", "/api/transactions?month="+now.Format("2006-01"), "", &txs)
+	if len(txs) != 1 || txs[0].Type != "transfer" || txs[0].ToAccount != "Kredivo" || txs[0].Amount != 500000 {
+		t.Fatalf("posted %+v", txs)
+	}
+	var recs []Recurring
+	call(t, srv, "GET", "/api/recurring", "", &recs)
+	if len(recs) != 1 || recs[0].NextDate <= now.Format(time.DateOnly) {
+		t.Fatalf("not advanced %+v", recs)
 	}
 }
