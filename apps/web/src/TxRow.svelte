@@ -1,5 +1,5 @@
 <script>
-  import { fmtIDR, fmtTime, fmtShort, fmtCur, isFresh } from './lib/store.svelte.js'
+  import { s, fmtIDR, fmtTime, fmtShort, fmtCur, isFresh } from './lib/store.svelte.js'
   import { catLook } from './lib/look.js'
   import Icon from './Icon.svelte'
 
@@ -7,6 +7,12 @@
   let { tx, onclick, showDate = false, account = '' } = $props()
   const fresh = $derived(isFresh(tx.id))
   const look = $derived(catLook(tx.type === 'transfer' ? 'Transfer' : tx.category))
+  // "2/3" for a part of a split payment
+  const part = $derived.by(() => {
+    if (!tx.split_of) return ''
+    const ids = s.txs.filter((x) => x.split_of === tx.split_of).map((x) => x.id).sort((a, b) => a - b)
+    return ids.length > 1 ? `split ${ids.indexOf(tx.id) + 1}/${ids.length}` : 'split'
+  })
   const into = (n) => n.trim().toLowerCase() === account.trim().toLowerCase()
   const sign = $derived(
     tx.type === 'in' ? '+' : tx.type === 'out' ? '−' : !account ? '' : into(tx.to_account || '') ? '+' : '−',
@@ -18,7 +24,7 @@
   <span class="main">
     <span class="merchant">{tx.merchant || tx.category}</span>
     <span class="meta">
-      {tx.category} · {(showDate ? fmtShort : fmtTime).format(new Date(tx.occurred_at))}{tx.account ? ' · ' + tx.account : ''}{tx.to_account ? ' → ' + tx.to_account : ''}
+      {tx.category} · {(showDate ? fmtShort : fmtTime).format(new Date(tx.occurred_at))}{tx.account ? ' · ' + tx.account : ''}{tx.to_account ? ' → ' + tx.to_account : ''}{part ? ' · ' + part : ''}
     </span>
     {#if tx.needs_review}<span class="badge">Perlu review</span>{/if}
   </span>

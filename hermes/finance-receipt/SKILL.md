@@ -23,15 +23,18 @@ Config from `~/.hermes/.env`: `FINANCE_API_URL`, `FINANCE_API_TOKEN` (same as fi
    - `category`: a rule whose pattern is contained in the merchant (case-insensitive) wins; otherwise the best-fitting `out` category from the list.
    - `account`: payment method printed on the receipt (`Cash`/`Tunai` → `Cash`, `Debit BCA` → `BCA`, `QRIS`/`GoPay`/`OVO`…). If the user said how they paid, use that. Unknown → `Cash`.
    - `note`: up to ~5 main items, comma-separated, ≤ 100 chars.
+   - `split` (optional): when the items clearly belong to **2+ different categories** (e.g. snacks → Jajan, soap/tissue → Belanja, token listrik → Tagihan), list them as `[{"category","amount","note"}]` using the item line prices. The script merges same-category items and puts the discount/tax/rounding gap on the largest part; if the items are more than 15% off the total it skips the split and says so. All items in one category (or unreadable item lines) → no `split`.
    - `confidence`: 0.9 if total, date and merchant are clearly readable; lower otherwise (< 0.7 puts it in the Review queue).
    - Never include card numbers, member/phone numbers, or cashier names.
 3. Post it:
    `echo '{"occurred_at":"...","amount":25000,"type":"out","category":"Jajan","merchant":"Indomaret","account":"Cash","note":"Aqua, Roti","confidence":0.9}' | python3 ~/.hermes/skills/finance-receipt/scripts/receipt.py post`
-   It prints one line (`✓ Keluar Rp25.000 · Jajan · Indomaret · Cash`, `sudah tercatat` for the same receipt sent twice, or `✗ …` with the API error). Reply with that line; if a field was a guess, say which one and that it can be fixed in the app.
+   With a split: `{..., "amount":150000, "category":"Jajan", "split":[{"category":"Jajan","amount":35000,"note":"Chitato, kopi"},{"category":"Belanja","amount":85000,"note":"Rinso, tisu"},{"category":"Tagihan","amount":30000,"note":"token listrik"}]}` (`category` = the largest part's).
+   It prints one line (`✓ Keluar Rp25.000 · Jajan · Indomaret · Cash`, plus `· split: Jajan Rp35.000, Belanja Rp85.000, …` when split, `sudah tercatat` for the same receipt sent twice, or `✗ …` with the API error). Reply with that line; if a field was a guess, say which one and that it can be fixed in the app.
 4. Several receipts in one message → post each separately.
 
 ## Corrections, shared bills, transfers
-- Bank-email transactions often exist already (source `email`). Before posting or adjusting, `GET /api/transactions` and check for the same amount/time to avoid double entries.
+- Bank-email transactions often exist already (source `email`). Before posting or adjusting, `GET /api/transactions` and check for the same amount/time to avoid double entries. Found one and the receipt has items in several categories → split that transaction instead of posting: `echo '{"amount":<its amount>,"split":[...]}' | python3 ~/.hermes/skills/finance-receipt/scripts/receipt.py split <id>`.
+- Split rules (API `POST /api/transactions/{id}/split` with `{"parts":[{"category","amount","note"}]}`): parts must add up exactly to the total; `in`/`out` IDR only (no transfers); calling it again on any part replaces the split; one part merges it back.
 - Split bill (patungan): the full payment stays as the user's `out`; the friend's share is a separate `in` (category `Refund`, merchant = friend, account = where it was received, note names the items).
 - Swapping balance for cash with a friend: the transfer is `transfer` from the paying account to `Cash` (cash received), and the friend's share is another `in` to `Cash`.
 - Transfers to a friend are NOT own-account transfers: clear `to_account` and `merchant`, set `needs_review:true`. Never take `to_account` from a bank's generic "X to Y" label.

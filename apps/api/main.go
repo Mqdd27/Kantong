@@ -158,6 +158,7 @@ func (a *app) routes() http.Handler {
 	api.HandleFunc("POST /api/transactions", a.createTx)
 	api.HandleFunc("GET /api/transactions", a.listTx)
 	api.HandleFunc("PATCH /api/transactions/{id}", a.patchTx)
+	api.HandleFunc("POST /api/transactions/{id}/split", a.splitTx)
 	api.HandleFunc("DELETE /api/transactions/{id}", a.deleteTx)
 	api.HandleFunc("POST /api/source-refs/check", a.checkRefs)
 	api.HandleFunc("GET /api/summary", a.summary)

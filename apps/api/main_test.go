@@ -683,3 +683,73 @@ func TestRecurringTransferPaysDebt(t *testing.T) {
 		}
 	}
 }
+
+// An email transaction split over three categories: total and balance unchanged, the email stays known,
+// re-splitting replaces the parts, one part merges back, and deleting the original promotes the next part.
+func TestSplitTransaction(t *testing.T) {
+	srv := newTestServer(t)
+	var tx Tx
+	call(t, srv, "POST", "/api/transactions", `{"occurred_at":"2026-11-07T12:30:00+07:00","amount":150000,"type":"out","category":"Jajan",
+		"merchant":"Indomaret","account":"BCA","source":"email","source_ref":"<s1@bca>","confidence":0.9}`, &tx)
+	split := func(id int64, body string) (int, []Tx) {
+		var out []Tx
+		return call(t, srv, "POST", "/api/transactions/"+strconv.FormatInt(id, 10)+"/split", body, &out), out
+	}
+	if c, _ := split(tx.ID, `{"parts":[{"category":"Jajan","amount":35000},{"category":"Belanja","amount":100000}]}`); c != 400 {
+		t.Fatalf("wrong sum accepted: %d", c)
+	}
+	if c, _ := split(tx.ID, `{"parts":[{"category":"Gaji","amount":150000}]}`); c != 400 {
+		t.Fatalf("in-category on an out tx accepted: %d", c)
+	}
+	c, parts := split(tx.ID, `{"parts":[{"category":"Jajan","amount":35000,"note":"snack"},{"category":"Belanja","amount":85000},{"category":"Tagihan","amount":30000,"note":"token"}]}`)
+	if c != 200 || len(parts) != 3 || parts[0].ID != tx.ID || parts[2].SplitOf == nil || *parts[2].SplitOf != tx.ID || parts[1].Note != "" {
+		t.Fatalf("split %d %+v", c, parts)
+	}
+	month := func() (n int, sum int64, cats map[string]int64) {
+		var txs []Tx
+		call(t, srv, "GET", "/api/transactions?month=2026-11", "", &txs)
+		cats = map[string]int64{}
+		for _, x := range txs {
+			n, sum, cats[x.Category] = n+1, sum+x.Amount, cats[x.Category]+x.Amount
+		}
+		return
+	}
+	if n, sum, cats := month(); n != 3 || sum != 150000 || cats["Belanja"] != 85000 {
+		t.Fatalf("after split %d %d %v", n, sum, cats)
+	}
+	var refs struct{ Unknown []string }
+	call(t, srv, "POST", "/api/source-refs/check", `{"refs":["<s1@bca>"]}`, &refs)
+	if len(refs.Unknown) != 0 {
+		t.Fatal("email ref lost after split")
+	}
+	// re-split from any part: replaces the group
+	if c, parts = split(parts[2].ID, `{"parts":[{"category":"Jajan","amount":50000},{"category":"Belanja","amount":100000}]}`); c != 200 || len(parts) != 2 {
+		t.Fatalf("resplit %d %+v", c, parts)
+	}
+	if n, sum, _ := month(); n != 2 || sum != 150000 {
+		t.Fatalf("after resplit %d %d", n, sum)
+	}
+	// delete the original: the other part takes over the email ref and is a plain row again
+	call(t, srv, "DELETE", "/api/transactions/"+strconv.FormatInt(tx.ID, 10), "", nil)
+	var left []Tx
+	call(t, srv, "GET", "/api/transactions?month=2026-11", "", &left)
+	if len(left) != 1 || left[0].SplitOf != nil || left[0].SourceRef == nil || *left[0].SourceRef != "<s1@bca>" {
+		t.Fatalf("after delete %+v", left)
+	}
+	call(t, srv, "POST", "/api/source-refs/check", `{"refs":["<s1@bca>"]}`, &refs)
+	if len(refs.Unknown) != 0 {
+		t.Fatal("email ref lost after deleting a part")
+	}
+	// merge back = split into one part
+	c, parts = split(left[0].ID, `{"parts":[{"category":"Belanja","amount":100000},{"category":"Jajan","amount":0}]}`)
+	if c != 400 {
+		t.Fatalf("zero part accepted %d", c)
+	}
+	split(left[0].ID, `{"parts":[{"category":"Belanja","amount":60000},{"category":"Jajan","amount":40000}]}`)
+	if c, parts = split(left[0].ID, `{"parts":[{"category":"Belanja","amount":100000}]}`); c != 200 || parts[0].SplitOf != nil {
+		t.Fatalf("merge %d %+v", c, parts)
+	}
+	if n, sum, _ := month(); n != 1 || sum != 100000 {
+		t.Fatalf("after merge %d %d", n, sum)
+	}
+}

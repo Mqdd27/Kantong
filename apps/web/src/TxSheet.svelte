@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte'
-  import { s, fmtNum, CURRENCIES, jakartaLocal, createTx, updateTx, deleteTx, addRule, loadAssets } from './lib/store.svelte.js'
+  import { s, fmtNum, fmtIDR, CURRENCIES, jakartaLocal, createTx, updateTx, deleteTx, addRule, loadAssets, act } from './lib/store.svelte.js'
 
   /** tx = undefined → add, otherwise edit */
   let { tx, onclose } = $props()
@@ -53,9 +53,56 @@
     deleteTx(tx.id)
     dialog.close()
   }
+
+  // ---- split: one payment over several categories (IDR in/out only) ----
+  const canSplit = $derived(tx && tx.type !== 'transfer' && (tx.currency ?? 'IDR') === 'IDR')
+  const group = $derived(tx?.split_of ? s.txs.filter((x) => x.split_of === tx.split_of).sort((a, b) => a.id - b.id) : tx ? [tx] : [])
+  const total = $derived(group.reduce((n, x) => n + x.amount, 0))
+  let splitting = $state(false)
+  let parts = $state([])
+  function startSplit() {
+    parts = group.map((x) => ({ category: x.category, amount: fmtNum.format(x.amount), note: x.note }))
+    if (parts.length === 1) parts.push({ category: cats.find((c) => c.name !== tx.category)?.name ?? tx.category, amount: '', note: '' })
+    splitting = true
+  }
+  const num = (t) => Number(String(t).replace(/\D/g, ''))
+  const left = $derived(total - parts.reduce((n, p) => n + num(p.amount), 0))
+  const typeAmount = (p, e) => { const n = e.currentTarget.value.replace(/\D/g, ''); p.amount = n ? fmtNum.format(Number(n)) : '' }
+  async function sendSplit(list) {
+    if (await act(`/transactions/${tx.id}/split`, 'POST', { parts: list })) dialog.close()
+  }
+  function saveSplit(e) {
+    e.preventDefault()
+    if (left === 0) sendSplit(parts.filter((p) => num(p.amount)).map((p) => ({ category: p.category, amount: num(p.amount), note: p.note })))
+  }
+  const merge = () => sendSplit([{ category: group[0].category, amount: total, note: group[0].note }])
 </script>
 
 <dialog class="sheet" bind:this={dialog} onclose={onclose} onclick={(e) => e.target === dialog && dialog.close()}>
+  {#if splitting}
+  <form onsubmit={saveSplit}>
+    <h2>Split · {tx.merchant || tx.category} {fmtIDR.format(total)}</h2>
+    {#each parts as p, i}
+      <div class="part">
+        <select bind:value={p.category} aria-label="Kategori bagian {i + 1}">
+          {#each cats as c}<option value={c.name}>{c.name}</option>{/each}
+        </select>
+        <input inputmode="numeric" value={p.amount} oninput={(e) => typeAmount(p, e)} placeholder="0" aria-label="Nominal bagian {i + 1}" />
+        <button type="button" class="x" aria-label="Hapus bagian {i + 1}" disabled={parts.length < 2} onclick={() => parts.splice(i, 1)}>×</button>
+        <input class="pnote" bind:value={p.note} placeholder="catatan (opsional)" autocomplete="off" aria-label="Catatan bagian {i + 1}" />
+      </div>
+    {/each}
+    <div class="sum">
+      <button type="button" onclick={() => parts.push({ category: cats[0]?.name ?? '', amount: left > 0 ? fmtNum.format(left) : '', note: '' })}>+ Bagian</button>
+      <span class:bad={left !== 0}>{left === 0 ? 'Pas' : left > 0 ? `Sisa ${fmtIDR.format(left)}` : `Lebih ${fmtIDR.format(-left)}`}</span>
+    </div>
+    <div class="actions">
+      {#if tx.split_of}<button type="button" onclick={merge}>Gabung lagi</button>{/if}
+      <button type="button" onclick={() => (splitting = false)}>Kembali</button>
+      <button class="primary" disabled={left !== 0}>Simpan split</button>
+    </div>
+  </form>
+  {:else}
   <form onsubmit={save}>
     <h2>{tx ? 'Edit transaksi' : 'Tambah transaksi'}</h2>
 
@@ -119,10 +166,12 @@
 
     <div class="actions">
       {#if tx}<button type="button" class="danger" onclick={del}>Hapus</button>{/if}
+      {#if canSplit}<button type="button" onclick={startSplit}>{tx.split_of ? `Split (${group.length})` : 'Split'}</button>{/if}
       <button type="button" onclick={() => dialog.close()}>Batal</button>
       <button class="primary" disabled={foreign ? !(orig > 0) : !amount}>Simpan</button>
     </div>
   </form>
+  {/if}
 </dialog>
 
 <style>
@@ -142,5 +191,30 @@
     display: grid;
     grid-template-columns: 96px 1fr;
     gap: 8px;
+  }
+  .part {
+    display: grid;
+    grid-template-columns: 1fr 1fr 40px;
+    gap: 6px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--line);
+  }
+  .part .pnote {
+    grid-column: 1 / -1;
+  }
+  .x {
+    padding: 0;
+    font-size: 20px;
+  }
+  .sum {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--in);
+  }
+  .sum .bad {
+    color: var(--warn);
   }
 </style>

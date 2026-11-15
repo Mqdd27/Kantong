@@ -36,7 +36,8 @@ Satu binary Go (API + SQLite + SSE + PWA Svelte yang di-embed), image Docker ±2
 - **Kalender**: pengeluaran per tanggal dengan warna sesuai besarnya, tagihan berulang yang akan datang, jumlah hari tanpa belanja, dan daftar transaksi per hari.
 - **Analitik**: 6 bulan masuk vs keluar, tingkat tabungan, dan kategori bulan ini dibanding rata-ratanya. Kalau Asisten AI aktif, ada kartu **Pendapat AI**: tombol "Minta pendapat AI" meminta Hermes mengomentari angka di rentang yang sama (3–5 poin). Server sendiri yang menghitung angkanya dan hanya mengirim ringkasan agregat (tanpa nama merchant), hasilnya tidak disimpan di riwayat Asisten, dan ikut tersembunyi saat nominal disembunyikan.
 - **Review & aturan**: transaksi hasil parsing email yang kurang yakin ditandai untuk dicek sekali tap. Selama ada yang perlu direview, kartu kuning muncul di Beranda dan Transaksi (di desktop juga ada angka di sidebar). Daftar aturan dibuka dari ikon label di header Transaksi. Koreksi kategori bisa disimpan jadi aturan ("selalu kategorikan Gojek sebagai Transport"), dan email berikutnya dari merchant itu langsung masuk dengan kategori yang benar.
-- **Foto struk → transaksi**: kirim foto struk ke Hermes di Telegram, transaksi keluarnya langsung tercatat.
+- **Split transaksi**: satu pembayaran dibagi ke beberapa kategori (mis. struk Indomaret = Jajan + Belanja + Tagihan) lewat tombol **Split** di transaksi. Totalnya harus pas, saldo rekening tidak berubah, dan email aslinya tetap dikenali sehingga tidak tercatat ulang. **Gabung lagi** mengembalikannya jadi satu.
+- **Foto struk → transaksi**: kirim foto struk ke Hermes di Telegram, transaksi keluarnya langsung tercatat. Kalau isinya beda-beda kategori, Hermes langsung men-split per item.
 - **Notifikasi Telegram**: setiap transaksi baru dari email dikirim ke Telegram, misalnya `Keluar Rp25.000 · Jajan · Indomaret (perlu review)`.
 - **Asisten AI (opsional)**: chat di app yang dijawab oleh agent Hermes kamu, jadi memori/contexynya sama dengan Hermes yang sudah ada dan datanya dibaca lewat skill `finance-*`. Chat dibagi per sesi (agar konteks tidak tercampur), riwayatnya tersimpan di aplikasi Kantong, dan model bisa dipilih per pesan lewat `CHAT_MODELS`. Data yang dibaca (nama merchant, isi email bank) yang dijadikan sebagai data reference. Cara mengaktifkan: isi `API_SERVER_ENABLED=true`, `API_SERVER_KEY`, dan `API_SERVER_HOST` (alamat yang bisa dijangkau container Kantong, mis. IP Tailscale server) di `~/.hermes/.env`, restart Hermes gateway, lalu isi `HERMES_API_URL` (mis. `http://<ip>:8642`), `HERMES_API_KEY`, dan opsional `CHAT_MODELS` di `.env` Kantong. Catatan: lewat API, Hermes jalan dengan semua tool-nya (termasuk terminal), jadi password Kantong juga melindungi akses itu.
 - **Backup harian**: salinan database tiap jam 03:00 WIB, 14 hari terakhir disimpan (Jika diset di Cron).
@@ -119,6 +120,7 @@ Semua endpoint `/api/*` butuh `Authorization: Bearer $API_TOKEN` atau cookie ses
 | Endpoint | Fungsi |
 |---|---|
 | `GET/POST /api/transactions`, `PATCH/DELETE /api/transactions/{id}` | Transaksi (`?month=YYYY-MM` atau `?q=cari`) |
+| `POST /api/transactions/{id}/split` | Pecah satu transaksi ke beberapa kategori: `{"parts":[{"category","amount","note"}]}`, totalnya harus sama. Dipanggil lagi = ganti split, satu part = gabung lagi |
 | `POST /api/source-refs/check` | Message-ID mana yang belum tercatat |
 | `GET /api/summary?month=` | Total masuk/keluar per kategori |
 | `GET /api/categories` | Kategori |

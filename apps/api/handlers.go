@@ -30,16 +30,17 @@ type Tx struct {
 	NeedsReview bool     `json:"needs_review"`
 	Currency    string   `json:"currency"`    // default IDR
 	OrigAmount  *float64 `json:"orig_amount"` // amount in Currency when not IDR; Amount is then its IDR value
+	SplitOf     *int64   `json:"split_of"`    // id of the original row when this is part of a split
 }
 
-const txCols = `id, occurred_at, amount, type, category, merchant, account, to_account, note, source, source_ref, confidence, needs_review, currency, orig_amount`
+const txCols = `id, occurred_at, amount, type, category, merchant, account, to_account, note, source, source_ref, confidence, needs_review, currency, orig_amount, split_of`
 
 type scanner interface{ Scan(...any) error }
 
 func scanTx(s scanner) (Tx, error) {
 	var t Tx
 	err := s.Scan(&t.ID, &t.OccurredAt, &t.Amount, &t.Type, &t.Category, &t.Merchant, &t.Account, &t.ToAccount,
-		&t.Note, &t.Source, &t.SourceRef, &t.Confidence, &t.NeedsReview, &t.Currency, &t.OrigAmount)
+		&t.Note, &t.Source, &t.SourceRef, &t.Confidence, &t.NeedsReview, &t.Currency, &t.OrigAmount, &t.SplitOf)
 	return t, err
 }
 
@@ -369,9 +370,38 @@ func (a *app) deleteTx(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, err)
 		return
 	}
+	var siblings []int64
+	if t.SplitOf != nil {
+		rows, err := a.db.Query(`SELECT id FROM transactions WHERE split_of = ? AND id != ?`, *t.SplitOf, t.ID)
+		if err != nil {
+			a.fail(w, err)
+			return
+		}
+		for rows.Next() {
+			var sid int64
+			rows.Scan(&sid)
+			siblings = append(siblings, sid)
+		}
+		rows.Close()
+	}
 	if _, err := a.db.Exec(`DELETE FROM transactions WHERE id = ?`, id); err != nil {
 		a.fail(w, err)
 		return
+	}
+	if t.SplitOf != nil {
+		kept, err := a.unsplitAfterDelete(t)
+		if err != nil {
+			a.fail(w, err)
+			return
+		}
+		if kept {
+			t.SourceRef = nil // a remaining part now carries the email's ref
+		}
+		for _, sid := range siblings { // their split_of / source_ref may have changed
+			if x, err := a.getTx(sid); err == nil {
+				a.hub.publish("transaction.updated", x)
+			}
+		}
 	}
 	if t.SourceRef != nil && *t.SourceRef != "" {
 		// otherwise the email cron sees the Message-ID as new again and re-imports it
@@ -382,6 +412,164 @@ func (a *app) deleteTx(w http.ResponseWriter, r *http.Request) {
 	}
 	a.hub.publish("transaction.deleted", t)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// splitTx spreads a transaction (or the split it belongs to) over several categories:
+// {"parts": [{"category": "Jajan", "amount": 35000, "note": "..."}, ...]}. The parts must add up to the total.
+// The original row becomes the first part and keeps its source_ref; one part merges a split back into one row.
+func (a *app) splitTx(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	var b struct {
+		Parts []struct {
+			Category string  `json:"category"`
+			Amount   int64   `json:"amount"`
+			Note     *string `json:"note"`
+		} `json:"parts"`
+	}
+	if !decode(w, r, &b) {
+		return
+	}
+	t, err := a.getTx(id)
+	if errors.Is(err, sql.ErrNoRows) {
+		writeErr(w, http.StatusNotFound, "not found")
+		return
+	} else if err != nil {
+		a.fail(w, err)
+		return
+	}
+	head := t
+	if t.SplitOf != nil && *t.SplitOf != t.ID {
+		if head, err = a.getTx(*t.SplitOf); err != nil {
+			a.fail(w, err)
+			return
+		}
+	}
+	var total int64
+	if err := a.db.QueryRow(`SELECT SUM(amount) FROM transactions WHERE id = ?1 OR split_of = ?1`, head.ID).Scan(&total); err != nil {
+		a.fail(w, err)
+		return
+	}
+	var sum int64
+	for _, p := range b.Parts {
+		if p.Amount <= 0 {
+			writeErr(w, http.StatusBadRequest, "every part needs a positive amount")
+			return
+		}
+		if !a.categoryExists(p.Category, head.Type) {
+			writeErr(w, http.StatusBadRequest, fmt.Sprintf("unknown category %q for type %q", p.Category, head.Type))
+			return
+		}
+		sum += p.Amount
+	}
+	switch {
+	case head.Type == "transfer":
+		writeErr(w, http.StatusBadRequest, "transfers can't be split")
+		return
+	case head.Currency != "IDR": // ponytail: IDR only, split orig_amount pro rata if foreign splits are ever needed
+		writeErr(w, http.StatusBadRequest, "only IDR transactions can be split")
+		return
+	case len(b.Parts) == 0:
+		writeErr(w, http.StatusBadRequest, "parts is required")
+		return
+	case sum != total:
+		writeErr(w, http.StatusBadRequest, fmt.Sprintf("parts add up to %d, the transaction is %d", sum, total))
+		return
+	}
+
+	tx, err := a.db.Begin()
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	defer tx.Rollback()
+	var removed []int64
+	rows, err := tx.Query(`SELECT id FROM transactions WHERE split_of = ? AND id != ?`, head.ID, head.ID)
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	for rows.Next() {
+		var rid int64
+		rows.Scan(&rid)
+		removed = append(removed, rid)
+	}
+	rows.Close()
+	if _, err := tx.Exec(`DELETE FROM transactions WHERE split_of = ? AND id != ?`, head.ID, head.ID); err != nil {
+		a.fail(w, err)
+		return
+	}
+	var splitOf *int64
+	if len(b.Parts) > 1 {
+		splitOf = &head.ID
+	}
+	note := func(n *string) string {
+		if n != nil {
+			return strings.TrimSpace(*n)
+		}
+		return head.Note
+	}
+	out := make([]Tx, len(b.Parts))
+	for i, p := range b.Parts {
+		x := head
+		x.Amount, x.Category, x.Note, x.SplitOf = p.Amount, p.Category, note(p.Note), splitOf
+		if i == 0 {
+			_, err = tx.Exec(`UPDATE transactions SET amount = ?, category = ?, note = ?, split_of = ?,
+				updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?`, x.Amount, x.Category, x.Note, x.SplitOf, x.ID)
+		} else {
+			x.SourceRef = nil // unique; the original row keeps the email's ref
+			var res sql.Result
+			res, err = tx.Exec(`INSERT INTO transactions
+				(occurred_at, amount, type, category, merchant, account, to_account, note, source, source_ref, confidence, needs_review, currency, orig_amount, split_of)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, NULL, ?)`,
+				x.OccurredAt, x.Amount, x.Type, x.Category, x.Merchant, x.Account, x.ToAccount, x.Note, x.Source, x.Confidence, x.NeedsReview, x.Currency, x.SplitOf)
+			if err == nil {
+				x.ID, _ = res.LastInsertId()
+			}
+		}
+		if err != nil {
+			a.fail(w, err)
+			return
+		}
+		out[i] = x
+	}
+	if err := tx.Commit(); err != nil {
+		a.fail(w, err)
+		return
+	}
+	for _, rid := range removed {
+		a.hub.publish("transaction.deleted", Tx{ID: rid})
+	}
+	a.hub.publish("transaction.updated", out[0])
+	for _, x := range out[1:] {
+		a.hub.publish("transaction.created", x)
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// unsplitAfterDelete keeps a split consistent after one part was deleted: when the original row goes,
+// the next part takes over its id role and source_ref; a single remaining part is a plain row again.
+// It reports whether another part still holds the deleted row's source_ref.
+func (a *app) unsplitAfterDelete(t Tx) (bool, error) {
+	g, moved := *t.SplitOf, false
+	if g == t.ID {
+		var next int64
+		err := a.db.QueryRow(`SELECT COALESCE(MIN(id), 0) FROM transactions WHERE split_of = ?`, g).Scan(&next)
+		if err != nil || next == 0 {
+			return false, err
+		}
+		if _, err := a.db.Exec(`UPDATE transactions SET split_of = ? WHERE split_of = ?`, next, g); err != nil {
+			return false, err
+		}
+		if _, err := a.db.Exec(`UPDATE transactions SET source_ref = ? WHERE id = ?`, t.SourceRef, next); err != nil {
+			return false, err
+		}
+		g, moved = next, true
+	}
+	_, err := a.db.Exec(`UPDATE transactions SET split_of = NULL WHERE split_of = ?1 AND (SELECT COUNT(*) FROM transactions WHERE split_of = ?1) = 1`, g)
+	return moved && t.SourceRef != nil, err
 }
 
 func (a *app) checkRefs(w http.ResponseWriter, r *http.Request) {
