@@ -42,8 +42,9 @@ Aset dicocokkan dari nama. Kalau namanya sama dengan aset yang sudah ada (misaln
 | Emas | Mata uang **Emas (gram)**: isi jumlah gram, modal dalam IDR. Nilainya ikut harga emas harian |
 | Saham | Nilai sekarang dan modal (total) |
 | Bank | Saldo, dan bunga % per tahun kalau tertera |
+| Kartu kredit / paylater / pinjaman | Jenis utang, sisa tagihan disimpan sebagai saldo negatif, dan tanggal jatuh tempo kalau tertera |
 
-Saldo bank, e-wallet, atau tunai yang beda dari saldo yang tercatat di Kantong bikin transaksi **Penyesuaian** (selisihnya) di Review, jadi bunga atau biaya admin tetap kelihatan.
+Saldo bank, e-wallet, tunai, atau sisa utang yang beda dari saldo yang tercatat di Kantong bikin transaksi **Penyesuaian** (selisihnya) di Review, jadi bunga atau biaya admin tetap kelihatan.
 
 Nomor rekening tidak pernah disimpan. Field yang tidak terbaca jelas dilewati, dan Hermes menyebutkan field mana.
 

@@ -29,8 +29,11 @@ Yang diisi Hermes:
 | Kategori | Dari [aturan](../README.md#fitur) kalau merchant-nya sudah punya aturan, kalau tidak Hermes memilih yang paling cocok |
 | Akun | Metode bayar di struk (Tunai → Cash, Debit BCA → BCA, QRIS…); kalau tidak tertera, Cash |
 | Catatan | Sampai 5 barang utama |
+| Split | Kalau barangnya beda-beda kategori (snack → Jajan, sabun → Belanja, token → Tagihan), transaksi langsung di-split per kategori. Diskon/pajak dibebankan ke bagian terbesar |
 
 - Struk yang sama terkirim dua kali tidak tercatat dobel; Hermes membalas "sudah tercatat".
+- Kalau pembayarannya sudah tercatat dari email bank, Hermes men-split transaksi itu, bukan mencatat baru.
+- Harga barang di struk meleset lebih dari 15% dari total (struk terpotong, barang tidak terbaca)? Split dilewati, transaksi tetap tercatat utuh, dan Hermes menyebutkannya. Split manual bisa lewat tombol **Split** di app.
 - Kalau struknya buram, transaksi tetap dicatat tapi masuk antrian **Review** di app.
 - Salah kategori? Koreksi di app dengan opsi "Selalu kategorikan …", supaya struk berikutnya dari toko itu langsung benar.
 - Nomor kartu, nomor member, dan nama kasir tidak disimpan.
