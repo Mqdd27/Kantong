@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 type Tx struct {
@@ -655,6 +657,54 @@ func (a *app) listCategories(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, cats)
+}
+
+const categoryMaxLen = 30
+
+// createCategory adds a user category. Only in/out categories can be added: transfer has a single built-in
+// category, and several code paths rely on it.
+func (a *app) createCategory(w http.ResponseWriter, r *http.Request) {
+	var c Category
+	if !decode(w, r, &c) {
+		return
+	}
+	// reject control characters (newline, tab, NUL) on the raw input: collapsing whitespace first would turn them into spaces
+	badName := strings.IndexFunc(c.Name, unicode.IsControl) >= 0
+	c.Name = strings.Join(strings.Fields(c.Name), " ") // trim and collapse whitespace
+	switch {
+	case c.Type != "in" && c.Type != "out":
+		writeErr(w, http.StatusBadRequest, "type must be in or out")
+		return
+	case c.Name == "":
+		writeErr(w, http.StatusBadRequest, "name is required")
+		return
+	case utf8.RuneCountInString(c.Name) > categoryMaxLen:
+		writeErr(w, http.StatusBadRequest, fmt.Sprintf("name must be at most %d characters", categoryMaxLen))
+		return
+	case badName:
+		writeErr(w, http.StatusBadRequest, "name must not contain control characters")
+		return
+	}
+	// the table is unique on (name, type) but case-sensitive: "makan" next to "Makan" would only confuse
+	var n int
+	if err := a.db.QueryRow(`SELECT COUNT(*) FROM categories WHERE lower(name) = lower(?) AND type = ?`, c.Name, c.Type).Scan(&n); err != nil {
+		a.fail(w, err)
+		return
+	}
+	if n > 0 {
+		writeErr(w, http.StatusConflict, "category already exists")
+		return
+	}
+	if _, err := a.db.Exec(`INSERT INTO categories (name, type) VALUES (?, ?)`, c.Name, c.Type); err != nil {
+		if strings.Contains(err.Error(), "UNIQUE constraint failed") { // lost a race with the same request
+			writeErr(w, http.StatusConflict, "category already exists")
+			return
+		}
+		a.fail(w, err)
+		return
+	}
+	a.hub.publish("categories.changed", map[string]any{})
+	writeJSON(w, http.StatusCreated, c)
 }
 
 // ---------- rules ----------

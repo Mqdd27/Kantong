@@ -163,6 +163,7 @@ func (a *app) routes() http.Handler {
 	api.HandleFunc("POST /api/source-refs/check", a.checkRefs)
 	api.HandleFunc("GET /api/summary", a.summary)
 	api.HandleFunc("GET /api/categories", a.listCategories)
+	api.HandleFunc("POST /api/categories", a.createCategory)
 	api.HandleFunc("GET /api/rules", a.listRules)
 	api.HandleFunc("POST /api/rules", a.createRule)
 	api.HandleFunc("PATCH /api/rules/{id}", a.patchRule)

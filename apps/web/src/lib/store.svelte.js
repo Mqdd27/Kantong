@@ -89,6 +89,36 @@ export async function load() {
   }
 }
 
+export async function loadCategories() {
+  try {
+    s.categories = await api('/categories')
+  } catch (e) {
+    fail(e)
+  }
+}
+
+/**
+ * Adds an in/out category and reloads the list. Returns `{ category }` on success or `{ error }` with a message
+ * for the caller to show next to its input (the global error banner sits behind open sheets).
+ */
+export async function addCategory(name, type) {
+  try {
+    const category = await api('/categories', { method: 'POST', body: { name, type } })
+    await loadCategories()
+    return { category }
+  } catch (e) {
+    if (e instanceof AuthError) {
+      s.authed = false
+      return { error: '' }
+    }
+    return { error: CATEGORY_ERRORS[e.message] ?? e.message }
+  }
+}
+const CATEGORY_ERRORS = {
+  'category already exists': 'Kategori itu sudah ada.',
+  'name is required': 'Nama kategori wajib diisi.',
+}
+
 export function setMonth(m) {
   s.month = m
   s.txs = []
@@ -109,6 +139,7 @@ export function connect() {
   es.addEventListener('transaction.deleted', (e) => remove(JSON.parse(e.data).id))
   es.addEventListener('assets.changed', loadAssets)
   es.addEventListener('budget.changed', budgetSoon)
+  es.addEventListener('categories.changed', loadCategories)
   // asset balances follow transactions on their account, so refresh them too once loaded
   const txChanged = () => { budgetSoon(); if (s.portfolio.assets.length) loadAssets() }
   for (const ev of ['transaction.created', 'transaction.updated', 'transaction.deleted']) es.addEventListener(ev, txChanged)

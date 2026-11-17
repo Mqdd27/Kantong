@@ -839,3 +839,84 @@ func TestDebtDueDayAndAutoInstallment(t *testing.T) {
 		t.Fatalf("not advanced %+v", recs)
 	}
 }
+
+func TestCreateCategory(t *testing.T) {
+	srv := newTestServer(t)
+	names := func() map[string]bool {
+		var cats []Category
+		call(t, srv, "GET", "/api/categories", "", &cats)
+		m := map[string]bool{}
+		for _, c := range cats {
+			m[c.Type+":"+c.Name] = true
+		}
+		return m
+	}
+	before := len(names())
+
+	var got Category
+	if code := call(t, srv, "POST", "/api/categories", `{"name":"  Sedekah  ","type":"out"}`, &got); code != 201 ||
+		got.Name != "Sedekah" || got.Type != "out" {
+		t.Fatalf("create = %d %+v", code, got)
+	}
+	if n := names(); !n["out:Sedekah"] || len(n) != before+1 {
+		t.Fatalf("categories after create: %v", n)
+	}
+
+	// the new category is usable right away by transactions, rules, budgets and splits
+	var tx Tx
+	if code := call(t, srv, "POST", "/api/transactions", `{"amount":2000,"type":"out","category":"Sedekah","merchant":"Tip driver","source":"manual"}`, &tx); code != 201 || tx.Category != "Sedekah" {
+		t.Fatalf("transaction in new category = %d %+v", code, tx)
+	}
+	if code := call(t, srv, "POST", "/api/rules", `{"pattern":"Tip driver","type":"out","category":"Sedekah"}`, nil); code != 201 {
+		t.Fatalf("rule for new category = %d", code)
+	}
+
+	// same name on the other type is a different category; a second 'in' category works too
+	if code := call(t, srv, "POST", "/api/categories", `{"name":"Sedekah","type":"in"}`, nil); code != 201 {
+		t.Fatalf("same name, other type = %d, want 201", code)
+	}
+
+	for name, c := range map[string]struct {
+		body string
+		want int
+	}{
+		"duplicate":               {`{"name":"Sedekah","type":"out"}`, 409},
+		"duplicate, other case":   {`{"name":"sEdEkAh","type":"out"}`, 409},
+		"duplicate, extra spaces": {`{"name":" Sedekah ","type":"out"}`, 409},
+		"built-in":                {`{"name":"Makan","type":"out"}`, 409},
+		"empty":                   {`{"name":"","type":"out"}`, 400},
+		"blank":                   {`{"name":"   ","type":"out"}`, 400},
+		"too long":                {`{"name":"` + strings.Repeat("a", 31) + `","type":"out"}`, 400},
+		"control character":       {`{"name":"a\u0000b","type":"out"}`, 400},
+		"newline":                 {`{"name":"a\nb","type":"out"}`, 400},
+		"transfer type":           {`{"name":"Lain","type":"transfer"}`, 400},
+		"unknown type":            {`{"name":"Lain","type":"x"}`, 400},
+		"missing type":            {`{"name":"Lain"}`, 400},
+		"unknown field":           {`{"name":"Lain","type":"out","id":1}`, 400},
+		"not json":                {`nope`, 400},
+	} {
+		if code := call(t, srv, "POST", "/api/categories", c.body, nil); code != c.want {
+			t.Errorf("%s: status %d, want %d", name, code, c.want)
+		}
+	}
+	// exactly 30 characters (counted as characters, not bytes) is accepted
+	if code := call(t, srv, "POST", "/api/categories", `{"name":"`+strings.Repeat("é", 30)+`","type":"out"}`, nil); code != 201 {
+		t.Errorf("30 multibyte characters = %d, want 201", code)
+	}
+	// rejected requests added nothing: before + Sedekah(out) + Sedekah(in) + the 30-char one
+	if n := len(names()); n != before+3 {
+		t.Errorf("%d categories, want %d", n, before+3)
+	}
+}
+
+func TestCreateCategoryAuth(t *testing.T) {
+	srv := newTestServer(t)
+	res, err := http.Post(srv.URL+"/api/categories", "application/json", strings.NewReader(`{"name":"X","type":"out"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != 401 {
+		t.Fatalf("no token = %d, want 401", res.StatusCode)
+	}
+}

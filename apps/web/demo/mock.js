@@ -74,6 +74,13 @@ export async function api(path, { method = 'GET', body } = {}) {
       { id: Date.now() + 1, role: 'assistant', text: reply, model: 'demo', created_at: at },
     ] }
   }
+  if (route === '/categories' && method === 'POST') {
+    const list = routes['/categories']
+    const name = body.name.trim()
+    if (list.some((c) => c.type === body.type && c.name.toLowerCase() === name.toLowerCase())) throw new Error('category already exists')
+    list.push({ name, type: body.type })
+    return { name, type: body.type }
+  }
   if (route === '/insight') return { month: body.month, months: body.months, text: reply }
 
   if (method !== 'GET') return null // other writes are accepted and forgotten
