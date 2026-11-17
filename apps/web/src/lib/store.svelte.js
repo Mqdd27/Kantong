@@ -77,10 +77,10 @@ function fail(e) {
   errTimer = setTimeout(() => (s.error = ''), 4000)
 }
 
-export async function load() {
+export async function load(force = false) {
   const month = s.month
   try {
-    const [txs, cats] = await Promise.all([api(`/transactions?month=${month}`), s.categories.length ? null : api('/categories')])
+    const [txs, cats] = await Promise.all([api(`/transactions?month=${month}`), s.categories.length && !force ? null : api('/categories')])
     if (cats) s.categories = cats
     if (month === s.month) s.txs = txs
     loadBudget()
@@ -114,9 +114,25 @@ export async function addCategory(name, type) {
     return { error: CATEGORY_ERRORS[e.message] ?? e.message }
   }
 }
+/** Renames a user-created category. Returns `{ category }` or `{ error }` like addCategory. */
+export async function renameCategory(id, name) {
+  try {
+    const category = await api(`/categories/${id}`, { method: 'PATCH', body: { name } })
+    // names are copied into transactions, rules, budgets and recurring items: reload everything that shows them
+    await Promise.all([loadCategories(), load(true)])
+    return { category }
+  } catch (e) {
+    if (e instanceof AuthError) {
+      s.authed = false
+      return { error: '' }
+    }
+    return { error: CATEGORY_ERRORS[e.message] ?? e.message }
+  }
+}
 const CATEGORY_ERRORS = {
   'category already exists': 'Kategori itu sudah ada.',
   'name is required': 'Nama kategori wajib diisi.',
+  'built-in categories cannot be renamed': 'Kategori bawaan tidak bisa diubah.',
 }
 
 export function setMonth(m) {

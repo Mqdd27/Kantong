@@ -920,3 +920,150 @@ func TestCreateCategoryAuth(t *testing.T) {
 		t.Fatalf("no token = %d, want 401", res.StatusCode)
 	}
 }
+
+func TestRenameCategory(t *testing.T) {
+	srv := newTestServer(t)
+	var cats []Category
+	idOf := func(name, typ string) int64 {
+		call(t, srv, "GET", "/api/categories", "", &cats)
+		for _, c := range cats {
+			if c.Name == name && c.Type == typ {
+				return c.ID
+			}
+		}
+		return 0
+	}
+	var made Category
+	call(t, srv, "POST", "/api/categories", `{"name":"Sedekah","type":"out"}`, &made)
+	if made.ID == 0 || !made.Custom {
+		t.Fatalf("created = %+v, want an id and custom=true", made)
+	}
+	// built-ins are listed as not custom
+	call(t, srv, "GET", "/api/categories", "", &cats)
+	for _, c := range cats {
+		if c.Name == "Makan" && (c.Custom || c.ID == 0) {
+			t.Fatalf("built-in listed as %+v", c)
+		}
+	}
+
+	// data in every place that refers to the category
+	var tx Tx
+	call(t, srv, "POST", "/api/transactions", `{"amount":2000,"type":"out","category":"Sedekah","merchant":"Tip","source":"manual"}`, &tx)
+	call(t, srv, "POST", "/api/rules", `{"pattern":"Tip driver","type":"out","category":"Sedekah"}`, nil)
+	month := time.Now().In(wib).Format("2006-01")
+	if code := call(t, srv, "PUT", "/api/budget", `{"month":"`+month+`","category":"Sedekah","amount":50000}`, nil); code != 204 {
+		t.Fatalf("budget = %d", code)
+	}
+	var rec Recurring
+	if code := call(t, srv, "POST", "/api/recurring", `{"type":"out","category":"Sedekah","merchant":"Masjid","amount":10000,"freq":"monthly","next_date":"2099-01-05"}`, &rec); code != 201 {
+		t.Fatalf("recurring = %d", code)
+	}
+
+	var got Category
+	if code := call(t, srv, "PATCH", "/api/categories/"+strconv.FormatInt(made.ID, 10), `{"name":"  Infaq   Masjid "}`, &got); code != 200 ||
+		got.Name != "Infaq Masjid" || got.ID != made.ID || !got.Custom {
+		t.Fatalf("rename = %d %+v", code, got)
+	}
+
+	// the old name is gone and the new one carries everything over
+	if idOf("Sedekah", "out") != 0 || idOf("Infaq Masjid", "out") != made.ID {
+		t.Fatalf("categories after rename: %+v", cats)
+	}
+	var txs []Tx
+	call(t, srv, "GET", "/api/transactions?month="+time.Now().In(wib).Format("2006-01"), "", &txs)
+	if len(txs) != 1 || txs[0].Category != "Infaq Masjid" {
+		t.Errorf("transaction category = %+v", txs)
+	}
+	var rules []Rule
+	call(t, srv, "GET", "/api/rules", "", &rules)
+	if len(rules) != 1 || rules[0].Category != "Infaq Masjid" {
+		t.Errorf("rule category = %+v", rules)
+	}
+	var recs []Recurring
+	call(t, srv, "GET", "/api/recurring", "", &recs)
+	if len(recs) != 1 || recs[0].Category != "Infaq Masjid" {
+		t.Errorf("recurring category = %+v", recs)
+	}
+	var bud struct{ Categories []BudgetLine }
+	call(t, srv, "GET", "/api/budget?month="+month, "", &bud)
+	found := false
+	for _, l := range bud.Categories {
+		if l.Category == "Sedekah" {
+			t.Errorf("budget still under the old name: %+v", l)
+		}
+		if l.Category == "Infaq Masjid" && l.Limit != nil && *l.Limit == 50000 && l.Spent == 2000 {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("budget limit/spent did not move to the new name: %+v", bud.Categories)
+	}
+	// the rule still applies to new email transactions, under the new name
+	call(t, srv, "POST", "/api/transactions", `{"amount":3000,"type":"out","category":"Lainnya","merchant":"Tip driver","source":"email","source_ref":"<rn@x>","confidence":0.4}`, &tx)
+	if tx.Category != "Infaq Masjid" || tx.NeedsReview {
+		t.Errorf("rule after rename: %+v", tx)
+	}
+	// the old name can no longer be used, the new one can
+	if code := call(t, srv, "POST", "/api/transactions", `{"amount":1,"type":"out","category":"Sedekah","source":"manual"}`, nil); code != 400 {
+		t.Errorf("old name accepted: %d", code)
+	}
+
+	// same name on the other type is unaffected by a rename on 'out'
+	var inCat Category
+	call(t, srv, "POST", "/api/categories", `{"name":"Hadiah","type":"in"}`, &inCat)
+	call(t, srv, "POST", "/api/categories", `{"name":"Hadiah","type":"out"}`, nil)
+	if code := call(t, srv, "PATCH", "/api/categories/"+strconv.FormatInt(inCat.ID, 10), `{"name":"Bonus"}`, nil); code != 200 {
+		t.Errorf("rename 'in' category = %d", code)
+	}
+	if idOf("Hadiah", "out") == 0 {
+		t.Errorf("renaming the 'in' category touched the 'out' one: %+v", cats)
+	}
+
+	id := strconv.FormatInt(made.ID, 10)
+	makan := strconv.FormatInt(idOf("Makan", "out"), 10)
+	for name, c := range map[string]struct {
+		path, body string
+		want       int
+	}{
+		"built-in":           {"/api/categories/" + makan, `{"name":"Makanan"}`, 403},
+		"unknown id":         {"/api/categories/9999", `{"name":"X"}`, 404},
+		"bad id":             {"/api/categories/abc", `{"name":"X"}`, 400},
+		"missing name":       {"/api/categories/" + id, `{}`, 400},
+		"empty":              {"/api/categories/" + id, `{"name":""}`, 400},
+		"blank":              {"/api/categories/" + id, `{"name":"   "}`, 400},
+		"too long":           {"/api/categories/" + id, `{"name":"` + strings.Repeat("a", 31) + `"}`, 400},
+		"control character":  {"/api/categories/" + id, `{"name":"a\u0000b"}`, 400},
+		"newline":            {"/api/categories/" + id, `{"name":"a\nb"}`, 400},
+		"clashes with other": {"/api/categories/" + id, `{"name":"makan"}`, 409},
+		"clashes, same type": {"/api/categories/" + id, `{"name":"HADIAH"}`, 409},
+		"unknown field":      {"/api/categories/" + id, `{"name":"X","type":"in"}`, 400},
+	} {
+		if code := call(t, srv, "PATCH", c.path, c.body, nil); code != c.want {
+			t.Errorf("%s: status %d, want %d", name, code, c.want)
+		}
+	}
+	// renaming to the same name, or just changing its case, is allowed and a no-op / case fix
+	if code := call(t, srv, "PATCH", "/api/categories/"+id, `{"name":"Infaq Masjid"}`, nil); code != 200 {
+		t.Errorf("same name = %d, want 200", code)
+	}
+	if code := call(t, srv, "PATCH", "/api/categories/"+id, `{"name":"infaq masjid"}`, &got); code != 200 || got.Name != "infaq masjid" {
+		t.Errorf("case-only change = %d %+v", code, got)
+	}
+	// rejected edits changed nothing
+	if idOf("infaq masjid", "out") != made.ID || idOf("Makan", "out") == 0 {
+		t.Errorf("categories after rejected edits: %+v", cats)
+	}
+}
+
+func TestRenameCategoryAuth(t *testing.T) {
+	srv := newTestServer(t)
+	req, _ := http.NewRequest("PATCH", srv.URL+"/api/categories/1", strings.NewReader(`{"name":"X"}`))
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != 401 {
+		t.Fatalf("no token = %d, want 401", res.StatusCode)
+	}
+}

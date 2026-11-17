@@ -11,6 +11,7 @@ const shifted = raw.replace(/\b(20\d\d)-(0[1-9]|1[0-2])\b/g, (_, y, m) => {
   return `${Math.floor(n / 12)}-${String((n % 12) + 1).padStart(2, '0')}`
 })
 const { routes } = JSON.parse(shifted)
+routes['/categories'] = routes['/categories'].map((c, i) => ({ id: i + 1, custom: false, ...c })) // the snapshot predates ids and custom
 
 const months = Object.keys(routes).filter((k) => k.startsWith('/transactions?month=')).sort()
 const oldest = months[0].slice(-7)
@@ -78,8 +79,18 @@ export async function api(path, { method = 'GET', body } = {}) {
     const list = routes['/categories']
     const name = body.name.trim()
     if (list.some((c) => c.type === body.type && c.name.toLowerCase() === name.toLowerCase())) throw new Error('category already exists')
-    list.push({ name, type: body.type })
-    return { name, type: body.type }
+    const c = { id: Math.max(0, ...list.map((x) => x.id ?? 0)) + 1, name, type: body.type, custom: true }
+    list.push(c)
+    return c
+  }
+  if (route.startsWith('/categories/') && method === 'PATCH') {
+    const c = routes['/categories'].find((x) => x.id === id)
+    if (!c) throw new Error('not found')
+    if (!c.custom) throw new Error('built-in categories cannot be renamed')
+    const name = body.name.trim()
+    if (routes['/categories'].some((x) => x !== c && x.type === c.type && x.name.toLowerCase() === name.toLowerCase())) throw new Error('category already exists')
+    c.name = name
+    return c
   }
   if (route === '/insight') return { month: body.month, months: body.months, text: reply }
 
