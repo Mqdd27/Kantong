@@ -92,6 +92,14 @@ export async function api(path, { method = 'GET', body } = {}) {
     c.name = name
     return c
   }
+  if (route.startsWith('/categories/') && method === 'DELETE') {
+    const list = routes['/categories']
+    const c = list.find((x) => x.id === id)
+    if (!c) throw new Error('not found')
+    if (!c.custom) throw new Error('built-in categories cannot be deleted')
+    list.splice(list.indexOf(c), 1)
+    return { moved_to: 'Lainnya', transactions: 0, rules_deleted: 0 }
+  }
   if (route === '/insight') return { month: body.month, months: body.months, text: reply }
 
   if (method !== 'GET') return null // other writes are accepted and forgotten

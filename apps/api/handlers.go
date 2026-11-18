@@ -807,6 +807,69 @@ func (a *app) patchCategory(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, cur)
 }
 
+// deleteCategory removes a user-created category. Its transactions and recurring items move to "Lainnya" of
+// the same type; rules and budgets for it are dropped, since they only existed to point at this category.
+// One database transaction, so a failure changes nothing.
+func (a *app) deleteCategory(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	var cur Category
+	err := a.db.QueryRow(`SELECT id, name, type, custom FROM categories WHERE id = ?`, id).Scan(&cur.ID, &cur.Name, &cur.Type, &cur.Custom)
+	if errors.Is(err, sql.ErrNoRows) {
+		writeErr(w, http.StatusNotFound, "not found")
+		return
+	} else if err != nil {
+		a.fail(w, err)
+		return
+	}
+	if !cur.Custom {
+		writeErr(w, http.StatusForbidden, "built-in categories cannot be deleted")
+		return
+	}
+	tx, err := a.db.Begin()
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	defer tx.Rollback()
+	var moved, rulesDeleted int64
+	steps := []struct {
+		q   string
+		n   *int64
+		arg []any
+	}{
+		{`UPDATE transactions SET category = 'Lainnya' WHERE category = ? AND type = ?`, &moved, []any{cur.Name, cur.Type}},
+		{`UPDATE recurring SET category = 'Lainnya' WHERE category = ? AND type = ?`, nil, []any{cur.Name, cur.Type}},
+		{`DELETE FROM rules WHERE category = ? AND type = ?`, &rulesDeleted, []any{cur.Name, cur.Type}},
+		{`DELETE FROM categories WHERE id = ?`, nil, []any{id}},
+	}
+	if cur.Type == "out" { // budgets only exist for expense categories
+		steps = append(steps, struct {
+			q   string
+			n   *int64
+			arg []any
+		}{`DELETE FROM budgets WHERE category = ?`, nil, []any{cur.Name}})
+	}
+	for _, st := range steps {
+		res, err := tx.Exec(st.q, st.arg...)
+		if err != nil {
+			a.fail(w, err)
+			return
+		}
+		if st.n != nil {
+			*st.n, _ = res.RowsAffected()
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		a.fail(w, err)
+		return
+	}
+	a.hub.publish("categories.changed", map[string]any{})
+	writeJSON(w, http.StatusOK, map[string]any{"moved_to": "Lainnya", "transactions": moved, "rules_deleted": rulesDeleted})
+}
+
 // ---------- rules ----------
 
 func (a *app) listRules(w http.ResponseWriter, _ *http.Request) {

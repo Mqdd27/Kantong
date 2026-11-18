@@ -165,6 +165,7 @@ func (a *app) routes() http.Handler {
 	api.HandleFunc("GET /api/categories", a.listCategories)
 	api.HandleFunc("POST /api/categories", a.createCategory)
 	api.HandleFunc("PATCH /api/categories/{id}", a.patchCategory)
+	api.HandleFunc("DELETE /api/categories/{id}", a.deleteCategory)
 	api.HandleFunc("GET /api/rules", a.listRules)
 	api.HandleFunc("POST /api/rules", a.createRule)
 	api.HandleFunc("PATCH /api/rules/{id}", a.patchRule)

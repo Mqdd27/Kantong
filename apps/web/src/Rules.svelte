@@ -1,6 +1,6 @@
 <script>
   import { api } from './lib/api.js'
-  import { s, act, editRule, renameCategory } from './lib/store.svelte.js'
+  import { s, act, editRule, renameCategory, deleteCategory } from './lib/store.svelte.js'
   import { catLook } from './lib/look.js'
   import PageHead from './PageHead.svelte'
   import Icon from './Icon.svelte'
@@ -36,6 +36,15 @@
       load() // rules show category names too
     } else renameErr = r.error
   }
+  let removing = $state(null) // category id waiting for the delete confirmation
+  async function removeCategory(c) {
+    renameBusy = true
+    const r = await deleteCategory(c.id)
+    renameBusy = false
+    removing = null
+    if (r.error) renameErr = r.error
+    else load() // its rules are gone
+  }
   async function setCategory(r, category) {
     if (category !== r.category && (await editRule(r.id, { category }))) await load()
     editing = null
@@ -66,12 +75,17 @@
             <button class="primary" disabled={!nameDraft.trim() || renameBusy}>Simpan</button>
             <button type="button" onclick={() => (renaming = null)}>Batal</button>
           </form>
+        {:else if removing === c.id}
+          <span class="main"><b>Hapus {c.name}?</b><span class="muted">Transaksinya pindah ke Lainnya, aturannya ikut terhapus.</span></span>
+          <button disabled={renameBusy} onclick={() => removeCategory(c)}>Hapus</button>
+          <button class="edit" onclick={() => (removing = null)}>Batal</button>
         {:else}
           <span class="main"><b>{c.name}</b><span class="muted">{c.type === 'in' ? 'Masuk' : 'Keluar'}</span></span>
           <button class="edit" onclick={() => startRename(c)}>Ubah</button>
+          <button onclick={() => ((removing = c.id), (renaming = null), (renameErr = ''))}>Hapus</button>
         {/if}
       </div>
-      {#if renaming === c.id && renameErr}<p class="rename-err" id="rename-err" role="alert">{renameErr}</p>{/if}
+      {#if (renaming === c.id || removing === c.id) && renameErr}<p class="rename-err" id="rename-err" role="alert">{renameErr}</p>{/if}
     {/each}
   </section>
   <h2 class="sec">Aturan</h2>

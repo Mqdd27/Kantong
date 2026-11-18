@@ -1067,3 +1067,81 @@ func TestRenameCategoryAuth(t *testing.T) {
 		t.Fatalf("no token = %d, want 401", res.StatusCode)
 	}
 }
+
+func TestDeleteCategory(t *testing.T) {
+	srv := newTestServer(t)
+	var made, twin Category
+	call(t, srv, "POST", "/api/categories", `{"name":"Sedekah","type":"out"}`, &made)
+	call(t, srv, "POST", "/api/categories", `{"name":"Sedekah","type":"in"}`, &twin)
+	month := time.Now().In(wib).Format("2006-01")
+	call(t, srv, "POST", "/api/transactions", `{"amount":2000,"type":"out","category":"Sedekah","merchant":"Tip","source":"manual"}`, nil)
+	call(t, srv, "POST", "/api/transactions", `{"amount":5000,"type":"in","category":"Sedekah","merchant":"Teman","source":"manual"}`, nil)
+	call(t, srv, "POST", "/api/rules", `{"pattern":"Tip driver","type":"out","category":"Sedekah"}`, nil)
+	call(t, srv, "PUT", "/api/budget", `{"month":"`+month+`","category":"Sedekah","amount":50000}`, nil)
+	call(t, srv, "POST", "/api/recurring", `{"type":"out","category":"Sedekah","merchant":"Masjid","amount":10000,"freq":"monthly","next_date":"2099-01-05"}`, nil)
+
+	// built-in, unknown, bad id
+	var cats []Category
+	call(t, srv, "GET", "/api/categories", "", &cats)
+	for _, c := range cats {
+		if c.Name == "Makan" {
+			if code := call(t, srv, "DELETE", "/api/categories/"+strconv.FormatInt(c.ID, 10), "", nil); code != 403 {
+				t.Errorf("delete built-in = %d, want 403", code)
+			}
+		}
+	}
+	if code := call(t, srv, "DELETE", "/api/categories/99999", "", nil); code != 404 {
+		t.Errorf("delete unknown = %d, want 404", code)
+	}
+	if code := call(t, srv, "DELETE", "/api/categories/abc", "", nil); code != 400 {
+		t.Errorf("delete bad id = %d, want 400", code)
+	}
+
+	var res struct {
+		MovedTo      string `json:"moved_to"`
+		Transactions int    `json:"transactions"`
+		RulesDeleted int    `json:"rules_deleted"`
+	}
+	if code := call(t, srv, "DELETE", "/api/categories/"+strconv.FormatInt(made.ID, 10), "", &res); code != 200 ||
+		res.MovedTo != "Lainnya" || res.Transactions != 1 || res.RulesDeleted != 1 {
+		t.Fatalf("delete = %d %+v", code, res)
+	}
+	if code := call(t, srv, "DELETE", "/api/categories/"+strconv.FormatInt(made.ID, 10), "", nil); code != 404 {
+		t.Errorf("second delete = %d, want 404", code)
+	}
+
+	call(t, srv, "GET", "/api/categories", "", &cats)
+	for _, c := range cats {
+		if c.ID == made.ID {
+			t.Errorf("category still listed: %+v", c)
+		}
+	}
+	var txs []Tx
+	call(t, srv, "GET", "/api/transactions?month="+month, "", &txs)
+	for _, x := range txs {
+		if x.Type == "out" && x.Category != "Lainnya" || x.Type == "in" && x.Category != "Sedekah" {
+			t.Errorf("transaction after delete = %+v (the in twin must stay)", x)
+		}
+	}
+	var rules []Rule
+	call(t, srv, "GET", "/api/rules", "", &rules)
+	if len(rules) != 0 {
+		t.Errorf("rules after delete = %+v", rules)
+	}
+	var recs []Recurring
+	call(t, srv, "GET", "/api/recurring", "", &recs)
+	if len(recs) != 1 || recs[0].Category != "Lainnya" {
+		t.Errorf("recurring after delete = %+v", recs)
+	}
+	var bud struct{ Categories []BudgetLine }
+	call(t, srv, "GET", "/api/budget?month="+month, "", &bud)
+	for _, l := range bud.Categories {
+		if l.Category == "Sedekah" {
+			t.Errorf("budget left behind: %+v", l)
+		}
+	}
+	// the old name is rejected for new transactions
+	if code := call(t, srv, "POST", "/api/transactions", `{"amount":1,"type":"out","category":"Sedekah","merchant":"x","source":"manual"}`, nil); code != 400 {
+		t.Errorf("post with deleted category = %d, want 400", code)
+	}
+}

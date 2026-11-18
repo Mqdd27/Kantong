@@ -129,10 +129,25 @@ export async function renameCategory(id, name) {
     return { error: CATEGORY_ERRORS[e.message] ?? e.message }
   }
 }
+/** Deletes a user-created category: its transactions move to Lainnya. Returns the API result or `{ error }`. */
+export async function deleteCategory(id) {
+  try {
+    const r = await api(`/categories/${id}`, { method: 'DELETE' })
+    await Promise.all([loadCategories(), load(true)])
+    return r
+  } catch (e) {
+    if (e instanceof AuthError) {
+      s.authed = false
+      return { error: '' }
+    }
+    return { error: CATEGORY_ERRORS[e.message] ?? e.message }
+  }
+}
 const CATEGORY_ERRORS = {
   'category already exists': 'Kategori itu sudah ada.',
   'name is required': 'Nama kategori wajib diisi.',
   'built-in categories cannot be renamed': 'Kategori bawaan tidak bisa diubah.',
+  'built-in categories cannot be deleted': 'Kategori bawaan tidak bisa dihapus.',
 }
 
 export function setMonth(m) {
