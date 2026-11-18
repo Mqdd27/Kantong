@@ -77,16 +77,77 @@ function fail(e) {
   errTimer = setTimeout(() => (s.error = ''), 4000)
 }
 
-export async function load() {
+export async function load(force = false) {
   const month = s.month
   try {
-    const [txs, cats] = await Promise.all([api(`/transactions?month=${month}`), s.categories.length ? null : api('/categories')])
+    const [txs, cats] = await Promise.all([api(`/transactions?month=${month}`), s.categories.length && !force ? null : api('/categories')])
     if (cats) s.categories = cats
     if (month === s.month) s.txs = txs
     loadBudget()
   } catch (e) {
     fail(e)
   }
+}
+
+export async function loadCategories() {
+  try {
+    s.categories = await api('/categories')
+  } catch (e) {
+    fail(e)
+  }
+}
+
+/**
+ * Adds an in/out category and reloads the list. Returns `{ category }` on success or `{ error }` with a message
+ * for the caller to show next to its input (the global error banner sits behind open sheets).
+ */
+export async function addCategory(name, type) {
+  try {
+    const category = await api('/categories', { method: 'POST', body: { name, type } })
+    await loadCategories()
+    return { category }
+  } catch (e) {
+    if (e instanceof AuthError) {
+      s.authed = false
+      return { error: '' }
+    }
+    return { error: CATEGORY_ERRORS[e.message] ?? e.message }
+  }
+}
+/** Renames a user-created category. Returns `{ category }` or `{ error }` like addCategory. */
+export async function renameCategory(id, name) {
+  try {
+    const category = await api(`/categories/${id}`, { method: 'PATCH', body: { name } })
+    // names are copied into transactions, rules, budgets and recurring items: reload everything that shows them
+    await Promise.all([loadCategories(), load(true)])
+    return { category }
+  } catch (e) {
+    if (e instanceof AuthError) {
+      s.authed = false
+      return { error: '' }
+    }
+    return { error: CATEGORY_ERRORS[e.message] ?? e.message }
+  }
+}
+/** Deletes a user-created category: its transactions move to Lainnya. Returns the API result or `{ error }`. */
+export async function deleteCategory(id) {
+  try {
+    const r = await api(`/categories/${id}`, { method: 'DELETE' })
+    await Promise.all([loadCategories(), load(true)])
+    return r
+  } catch (e) {
+    if (e instanceof AuthError) {
+      s.authed = false
+      return { error: '' }
+    }
+    return { error: CATEGORY_ERRORS[e.message] ?? e.message }
+  }
+}
+const CATEGORY_ERRORS = {
+  'category already exists': 'Kategori itu sudah ada.',
+  'name is required': 'Nama kategori wajib diisi.',
+  'built-in categories cannot be renamed': 'Kategori bawaan tidak bisa diubah.',
+  'built-in categories cannot be deleted': 'Kategori bawaan tidak bisa dihapus.',
 }
 
 export function setMonth(m) {
@@ -109,6 +170,7 @@ export function connect() {
   es.addEventListener('transaction.deleted', (e) => remove(JSON.parse(e.data).id))
   es.addEventListener('assets.changed', loadAssets)
   es.addEventListener('budget.changed', budgetSoon)
+  es.addEventListener('categories.changed', loadCategories)
   // asset balances follow transactions on their account, so refresh them too once loaded
   const txChanged = () => { budgetSoon(); if (s.portfolio.assets.length) loadAssets() }
   for (const ev of ['transaction.created', 'transaction.updated', 'transaction.deleted']) es.addEventListener(ev, txChanged)

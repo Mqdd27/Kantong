@@ -11,6 +11,7 @@ const shifted = raw.replace(/\b(20\d\d)-(0[1-9]|1[0-2])\b/g, (_, y, m) => {
   return `${Math.floor(n / 12)}-${String((n % 12) + 1).padStart(2, '0')}`
 })
 const { routes } = JSON.parse(shifted)
+routes['/categories'] = routes['/categories'].map((c, i) => ({ id: i + 1, custom: false, ...c })) // the snapshot predates ids and custom
 
 const months = Object.keys(routes).filter((k) => k.startsWith('/transactions?month=')).sort()
 const oldest = months[0].slice(-7)
@@ -73,6 +74,31 @@ export async function api(path, { method = 'GET', body } = {}) {
       { id: Date.now(), role: 'user', text: body.text, created_at: at },
       { id: Date.now() + 1, role: 'assistant', text: reply, model: 'demo', created_at: at },
     ] }
+  }
+  if (route === '/categories' && method === 'POST') {
+    const list = routes['/categories']
+    const name = body.name.trim()
+    if (list.some((c) => c.type === body.type && c.name.toLowerCase() === name.toLowerCase())) throw new Error('category already exists')
+    const c = { id: Math.max(0, ...list.map((x) => x.id ?? 0)) + 1, name, type: body.type, custom: true }
+    list.push(c)
+    return c
+  }
+  if (route.startsWith('/categories/') && method === 'PATCH') {
+    const c = routes['/categories'].find((x) => x.id === id)
+    if (!c) throw new Error('not found')
+    if (!c.custom) throw new Error('built-in categories cannot be renamed')
+    const name = body.name.trim()
+    if (routes['/categories'].some((x) => x !== c && x.type === c.type && x.name.toLowerCase() === name.toLowerCase())) throw new Error('category already exists')
+    c.name = name
+    return c
+  }
+  if (route.startsWith('/categories/') && method === 'DELETE') {
+    const list = routes['/categories']
+    const c = list.find((x) => x.id === id)
+    if (!c) throw new Error('not found')
+    if (!c.custom) throw new Error('built-in categories cannot be deleted')
+    list.splice(list.indexOf(c), 1)
+    return { moved_to: 'Lainnya', transactions: 0, rules_deleted: 0 }
   }
   if (route === '/insight') return { month: body.month, months: body.months, text: reply }
 

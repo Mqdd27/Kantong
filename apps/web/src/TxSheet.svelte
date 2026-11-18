@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte'
-  import { s, fmtNum, fmtIDR, CURRENCIES, jakartaLocal, createTx, updateTx, deleteTx, addRule, loadAssets, act } from './lib/store.svelte.js'
+  import { s, fmtNum, fmtIDR, CURRENCIES, jakartaLocal, createTx, updateTx, deleteTx, addRule, loadAssets, act, addCategory } from './lib/store.svelte.js'
 
   /** tx = undefined → add, otherwise edit */
   let { tx, onclose } = $props()
@@ -21,6 +21,26 @@
   const cats = $derived(s.categories.filter((c) => c.type === type))
   const corrected = $derived(tx && merchant.trim() && (category !== tx.category || type !== tx.type))
   let always = $state(false)
+  let adding = $state(false)
+  let newCat = $state('')
+  let newCatErr = $state('')
+  let newCatBusy = $state(false)
+  async function createCat() {
+    const name = newCat.trim()
+    if (!name || newCatBusy) return
+    newCatBusy = true
+    const r = await addCategory(name, type)
+    newCatBusy = false
+    if (r.category) {
+      category = r.category.name
+      adding = false
+      newCat = ''
+      newCatErr = ''
+    } else {
+      newCatErr = r.error
+    }
+  }
+  const closeNewCat = () => ((adding = false), (newCat = ''), (newCatErr = ''))
   const amount = $derived(Number(amountText.replace(/\D/g, '')))
 
   $effect(() => {
@@ -138,6 +158,28 @@
         {#each cats as c}<option value={c.name}>{c.name}</option>{/each}
       </select>
     </label>
+    {#if type !== 'transfer'}
+      {#if adding}
+        <div class="newcat">
+          <input
+            bind:value={newCat}
+            maxlength="30"
+            placeholder="Nama kategori baru"
+            aria-label="Nama kategori baru"
+            aria-invalid={newCatErr ? 'true' : undefined}
+            aria-describedby={newCatErr ? 'newcat-err' : undefined}
+            autocomplete="off"
+            oninput={() => (newCatErr = '')}
+            onkeydown={(e) => e.key === 'Enter' && (e.preventDefault(), createCat())}
+          />
+          <button type="button" class="primary" disabled={!newCat.trim() || newCatBusy} onclick={createCat}>Tambah</button>
+          <button type="button" onclick={closeNewCat}>Batal</button>
+        </div>
+        {#if newCatErr}<p class="newcat-err" id="newcat-err" role="alert">{newCatErr}</p>{/if}
+      {:else}
+        <button type="button" class="addcat" onclick={() => (adding = true)}>+ Kategori baru</button>
+      {/if}
+    {/if}
     <label>Merchant
       <input bind:value={merchant} autocomplete="off" />
     </label>
@@ -175,6 +217,27 @@
 </dialog>
 
 <style>
+  .newcat {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    gap: 8px;
+    align-items: center;
+  }
+  .newcat input[aria-invalid='true'],
+  .newcat input[aria-invalid='true']:focus {
+    border-color: var(--out);
+    outline-color: var(--out);
+  }
+  .newcat-err {
+    margin: 0;
+    color: var(--out);
+    font-size: 13px;
+  }
+  .addcat {
+    justify-self: start;
+    padding: 6px 12px;
+    font-size: 14px;
+  }
   .check {
     display: flex;
     gap: 8px;

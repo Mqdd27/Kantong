@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 type Tx struct {
@@ -45,8 +47,10 @@ func scanTx(s scanner) (Tx, error) {
 }
 
 type Category struct {
-	Name string `json:"name"`
-	Type string `json:"type"`
+	ID     int64  `json:"id"`
+	Name   string `json:"name"`
+	Type   string `json:"type"`
+	Custom bool   `json:"custom"` // user-created: can be renamed
 }
 
 type Rule struct {
@@ -110,7 +114,7 @@ func (a *app) categoryExists(name, typ string) bool {
 }
 
 func (a *app) categories() ([]Category, error) {
-	rows, err := a.db.Query(`SELECT name, type FROM categories ORDER BY type, id`)
+	rows, err := a.db.Query(`SELECT id, name, type, custom FROM categories ORDER BY type, id`)
 	if err != nil {
 		return nil, err
 	}
@@ -118,7 +122,7 @@ func (a *app) categories() ([]Category, error) {
 	out := []Category{}
 	for rows.Next() {
 		var c Category
-		if err := rows.Scan(&c.Name, &c.Type); err != nil {
+		if err := rows.Scan(&c.ID, &c.Name, &c.Type, &c.Custom); err != nil {
 			return nil, err
 		}
 		out = append(out, c)
@@ -655,6 +659,215 @@ func (a *app) listCategories(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, cats)
+}
+
+const categoryMaxLen = 30
+
+// cleanCategoryName trims and collapses whitespace and validates the result. The second value is an
+// error message, empty when the name is fine.
+func cleanCategoryName(raw string) (string, string) {
+	// reject control characters (newline, tab, NUL) on the raw input: collapsing whitespace first would turn them into spaces
+	hasControl := strings.IndexFunc(raw, unicode.IsControl) >= 0
+	name := strings.Join(strings.Fields(raw), " ")
+	switch {
+	case hasControl:
+		return "", "name must not contain control characters"
+	case name == "":
+		return "", "name is required"
+	case utf8.RuneCountInString(name) > categoryMaxLen:
+		return "", fmt.Sprintf("name must be at most %d characters", categoryMaxLen)
+	}
+	return name, ""
+}
+
+// createCategory adds a user category. Only in/out categories can be added: transfer has a single built-in
+// category, and several code paths rely on it.
+func (a *app) createCategory(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Name string `json:"name"`
+		Type string `json:"type"`
+	}
+	if !decode(w, r, &in) {
+		return
+	}
+	if in.Type != "in" && in.Type != "out" {
+		writeErr(w, http.StatusBadRequest, "type must be in or out")
+		return
+	}
+	name, msg := cleanCategoryName(in.Name)
+	if msg != "" {
+		writeErr(w, http.StatusBadRequest, msg)
+		return
+	}
+	// the table is unique on (name, type) but case-sensitive: "makan" next to "Makan" would only confuse
+	var n int
+	if err := a.db.QueryRow(`SELECT COUNT(*) FROM categories WHERE lower(name) = lower(?) AND type = ?`, name, in.Type).Scan(&n); err != nil {
+		a.fail(w, err)
+		return
+	}
+	if n > 0 {
+		writeErr(w, http.StatusConflict, "category already exists")
+		return
+	}
+	res, err := a.db.Exec(`INSERT INTO categories (name, type, custom) VALUES (?, ?, 1)`, name, in.Type)
+	if err != nil {
+		if strings.Contains(err.Error(), "UNIQUE constraint failed") { // lost a race with the same request
+			writeErr(w, http.StatusConflict, "category already exists")
+			return
+		}
+		a.fail(w, err)
+		return
+	}
+	id, _ := res.LastInsertId()
+	a.hub.publish("categories.changed", map[string]any{})
+	writeJSON(w, http.StatusCreated, Category{ID: id, Name: name, Type: in.Type, Custom: true})
+}
+
+// patchCategory renames a user-created category. Transactions and rules follow through ON UPDATE CASCADE;
+// recurring items (their foreign key has no cascade) and budgets (no foreign key) are updated here, all in one
+// transaction so a failure leaves the old name everywhere.
+func (a *app) patchCategory(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	var in struct {
+		Name *string `json:"name"`
+	}
+	if !decode(w, r, &in) {
+		return
+	}
+	var cur Category
+	err := a.db.QueryRow(`SELECT id, name, type, custom FROM categories WHERE id = ?`, id).Scan(&cur.ID, &cur.Name, &cur.Type, &cur.Custom)
+	if errors.Is(err, sql.ErrNoRows) {
+		writeErr(w, http.StatusNotFound, "not found")
+		return
+	} else if err != nil {
+		a.fail(w, err)
+		return
+	}
+	if !cur.Custom {
+		writeErr(w, http.StatusForbidden, "built-in categories cannot be renamed")
+		return
+	}
+	if in.Name == nil {
+		writeErr(w, http.StatusBadRequest, "name is required")
+		return
+	}
+	name, msg := cleanCategoryName(*in.Name)
+	if msg != "" {
+		writeErr(w, http.StatusBadRequest, msg)
+		return
+	}
+	if name == cur.Name {
+		writeJSON(w, http.StatusOK, cur)
+		return
+	}
+	var other int64
+	if err := a.db.QueryRow(`SELECT id FROM categories WHERE lower(name) = lower(?) AND type = ? AND id != ?`, name, cur.Type, id).Scan(&other); err == nil {
+		writeJSON(w, http.StatusConflict, map[string]any{"error": "category already exists", "id": other})
+		return
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		a.fail(w, err)
+		return
+	}
+
+	tx, err := a.db.Begin()
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	defer tx.Rollback()
+	steps := []struct {
+		q    string
+		args []any
+	}{
+		{`PRAGMA defer_foreign_keys = ON`, nil}, // recurring points at the old name until its own UPDATE below: check at commit
+		{`UPDATE categories SET name = ? WHERE id = ?`, []any{name, id}},
+		{`UPDATE recurring SET category = ? WHERE category = ? AND type = ?`, []any{name, cur.Name, cur.Type}},
+	}
+	if cur.Type == "out" { // budgets only exist for expense categories
+		steps = append(steps, struct {
+			q    string
+			args []any
+		}{`UPDATE budgets SET category = ? WHERE category = ?`, []any{name, cur.Name}})
+	}
+	for _, st := range steps {
+		if _, err := tx.Exec(st.q, st.args...); err != nil {
+			a.fail(w, err)
+			return
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		a.fail(w, err)
+		return
+	}
+	a.hub.publish("categories.changed", map[string]any{})
+	cur.Name = name
+	writeJSON(w, http.StatusOK, cur)
+}
+
+// deleteCategory removes a user-created category. Its transactions and recurring items move to "Lainnya" of
+// the same type; rules and budgets for it are dropped, since they only existed to point at this category.
+// One database transaction, so a failure changes nothing.
+func (a *app) deleteCategory(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	var cur Category
+	err := a.db.QueryRow(`SELECT id, name, type, custom FROM categories WHERE id = ?`, id).Scan(&cur.ID, &cur.Name, &cur.Type, &cur.Custom)
+	if errors.Is(err, sql.ErrNoRows) {
+		writeErr(w, http.StatusNotFound, "not found")
+		return
+	} else if err != nil {
+		a.fail(w, err)
+		return
+	}
+	if !cur.Custom {
+		writeErr(w, http.StatusForbidden, "built-in categories cannot be deleted")
+		return
+	}
+	tx, err := a.db.Begin()
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	defer tx.Rollback()
+	var moved, rulesDeleted int64
+	steps := []struct {
+		q   string
+		n   *int64
+		arg []any
+	}{
+		{`UPDATE transactions SET category = 'Lainnya' WHERE category = ? AND type = ?`, &moved, []any{cur.Name, cur.Type}},
+		{`UPDATE recurring SET category = 'Lainnya' WHERE category = ? AND type = ?`, nil, []any{cur.Name, cur.Type}},
+		{`DELETE FROM rules WHERE category = ? AND type = ?`, &rulesDeleted, []any{cur.Name, cur.Type}},
+		{`DELETE FROM categories WHERE id = ?`, nil, []any{id}},
+	}
+	if cur.Type == "out" { // budgets only exist for expense categories
+		steps = append(steps, struct {
+			q   string
+			n   *int64
+			arg []any
+		}{`DELETE FROM budgets WHERE category = ?`, nil, []any{cur.Name}})
+	}
+	for _, st := range steps {
+		res, err := tx.Exec(st.q, st.arg...)
+		if err != nil {
+			a.fail(w, err)
+			return
+		}
+		if st.n != nil {
+			*st.n, _ = res.RowsAffected()
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		a.fail(w, err)
+		return
+	}
+	a.hub.publish("categories.changed", map[string]any{})
+	writeJSON(w, http.StatusOK, map[string]any{"moved_to": "Lainnya", "transactions": moved, "rules_deleted": rulesDeleted})
 }
 
 // ---------- rules ----------
