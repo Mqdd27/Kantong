@@ -1,6 +1,6 @@
 <script>
   import { api } from './lib/api.js'
-  import { s, act, editRule, renameCategory, deleteCategory } from './lib/store.svelte.js'
+  import { s, act, editRule, renameCategory, deleteCategory, addCategory } from './lib/store.svelte.js'
   import { catLook } from './lib/look.js'
   import PageHead from './PageHead.svelte'
   import Icon from './Icon.svelte'
@@ -33,6 +33,7 @@
     renameBusy = false
     if (r.category) {
       renaming = null
+      addErr = ''
       load() // rules show category names too
     } else renameErr = r.error
   }
@@ -43,7 +44,19 @@
     renameBusy = false
     removing = null
     if (r.error) renameErr = r.error
-    else load() // its rules are gone
+    else (load(), (addErr = '')) // its rules are gone; a stale "already exists" no longer holds
+  }
+  let newName = $state('')
+  let newType = $state('out')
+  let addErr = $state('')
+  async function add() {
+    const name = newName.trim()
+    if (!name || renameBusy) return
+    renameBusy = true
+    const r = await addCategory(name, newType)
+    renameBusy = false
+    if (r.category) newName = ''
+    else addErr = r.error
   }
   async function setCategory(r, category) {
     if (category !== r.category && (await editRule(r.id, { category }))) await load()
@@ -54,42 +67,60 @@
 <PageHead title="Aturan kategori" />
 <p class="muted intro">Email dengan merchant yang mengandung teks ini langsung masuk ke kategorinya, tanpa review. Aturan dibuat dari koreksi di Review atau saat edit transaksi.</p>
 
-{#if mine.length}
-  <h2 class="sec">Kategori buatanmu</h2>
-  <section class="card list">
-    {#each mine as c (c.id)}
-      {@const look = catLook(c.name)}
-      <div class="row">
-        <span class="avatar" style:--hue={look.hue}><Icon name={look.icon} /></span>
-        {#if renaming === c.id}
-          <form class="rename" onsubmit={(e) => (e.preventDefault(), saveRename(c))}>
-            <input
-              bind:value={nameDraft}
-              maxlength="30"
-              aria-label="Nama kategori"
-              aria-invalid={renameErr ? 'true' : undefined}
-              aria-describedby={renameErr ? 'rename-err' : undefined}
-              oninput={() => (renameErr = '')}
-              autocomplete="off"
-            />
-            <button class="primary" disabled={!nameDraft.trim() || renameBusy}>Simpan</button>
-            <button type="button" onclick={() => (renaming = null)}>Batal</button>
-          </form>
-        {:else if removing === c.id}
-          <span class="main"><b>Hapus {c.name}?</b><span class="muted">Transaksinya pindah ke Lainnya, aturannya ikut terhapus.</span></span>
-          <button disabled={renameBusy} onclick={() => removeCategory(c)}>Hapus</button>
-          <button class="edit" onclick={() => (removing = null)}>Batal</button>
-        {:else}
-          <span class="main"><b>{c.name}</b><span class="muted">{c.type === 'in' ? 'Masuk' : 'Keluar'}</span></span>
-          <button class="edit" onclick={() => startRename(c)}>Ubah</button>
-          <button onclick={() => ((removing = c.id), (renaming = null), (renameErr = ''))}>Hapus</button>
-        {/if}
-      </div>
-      {#if (renaming === c.id || removing === c.id) && renameErr}<p class="rename-err" id="rename-err" role="alert">{renameErr}</p>{/if}
-    {/each}
-  </section>
-  <h2 class="sec">Aturan</h2>
-{/if}
+<h2 class="sec">Kategori buatanmu</h2>
+<section class="card list">
+  {#each mine as c (c.id)}
+    {@const look = catLook(c.name)}
+    <div class="row">
+      <span class="avatar" style:--hue={look.hue}><Icon name={look.icon} /></span>
+      {#if renaming === c.id}
+        <form class="rename" onsubmit={(e) => (e.preventDefault(), saveRename(c))}>
+          <input
+            bind:value={nameDraft}
+            maxlength="30"
+            aria-label="Nama kategori"
+            aria-invalid={renameErr ? 'true' : undefined}
+            aria-describedby={renameErr ? 'rename-err' : undefined}
+            oninput={() => (renameErr = '')}
+            autocomplete="off"
+          />
+          <button class="primary" disabled={!nameDraft.trim() || renameBusy}>Simpan</button>
+          <button type="button" onclick={() => (renaming = null)}>Batal</button>
+        </form>
+      {:else if removing === c.id}
+        <span class="main"><b>Hapus {c.name}?</b><span class="muted">Transaksinya pindah ke Lainnya, aturannya ikut terhapus.</span></span>
+        <button disabled={renameBusy} onclick={() => removeCategory(c)}>Hapus</button>
+        <button class="edit" onclick={() => (removing = null)}>Batal</button>
+      {:else}
+        <span class="main"><b>{c.name}</b><span class="muted">{c.type === 'in' ? 'Masuk' : 'Keluar'}</span></span>
+        <button class="edit" onclick={() => startRename(c)}>Ubah</button>
+        <button onclick={() => ((removing = c.id), (renaming = null), (renameErr = ''))}>Hapus</button>
+      {/if}
+    </div>
+    {#if (renaming === c.id || removing === c.id) && renameErr}<p class="rename-err" id="rename-err" role="alert">{renameErr}</p>{/if}
+  {:else}
+    <p class="empty">Belum ada. Kategori bawaan tidak bisa diubah; tambahkan sendiri di bawah.</p>
+  {/each}
+  <form class="rename add" onsubmit={(e) => (e.preventDefault(), add())}>
+    <input
+      bind:value={newName}
+      maxlength="30"
+      placeholder="Kategori baru"
+      aria-label="Nama kategori baru"
+      aria-invalid={addErr ? 'true' : undefined}
+      aria-describedby={addErr ? 'add-err' : undefined}
+      oninput={() => (addErr = '')}
+      autocomplete="off"
+    />
+    <select bind:value={newType} aria-label="Jenis kategori" onchange={() => (addErr = '')}>
+      <option value="out">Keluar</option>
+      <option value="in">Masuk</option>
+    </select>
+    <button class="primary" disabled={!newName.trim() || renameBusy}>Tambah</button>
+  </form>
+  {#if addErr}<p class="rename-err" id="add-err" role="alert">{addErr}</p>{/if}
+</section>
+<h2 class="sec">Aturan</h2>
 
 <section class="card list">
 {#each rules as r (r.id)}
@@ -158,6 +189,9 @@
   .rename input[aria-invalid='true']:focus {
     border-color: var(--out);
     outline-color: var(--out);
+  }
+  .add {
+    padding: 10px 0;
   }
   .rename-err {
     margin: 0 0 8px;
