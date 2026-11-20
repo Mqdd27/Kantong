@@ -723,6 +723,23 @@ func (a *app) createCategory(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, Category{ID: id, Name: name, Type: in.Type, Custom: true})
 }
 
+// customCategory loads a user-created category, writing 404/403 when it is missing or built in.
+func (a *app) customCategory(w http.ResponseWriter, id int64, verb string) (Category, bool) {
+	var c Category
+	err := a.db.QueryRow(`SELECT id, name, type, custom FROM categories WHERE id = ?`, id).Scan(&c.ID, &c.Name, &c.Type, &c.Custom)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		writeErr(w, http.StatusNotFound, "not found")
+	case err != nil:
+		a.fail(w, err)
+	case !c.Custom:
+		writeErr(w, http.StatusForbidden, "built-in categories cannot be "+verb)
+	default:
+		return c, true
+	}
+	return c, false
+}
+
 // patchCategory renames a user-created category. Transactions and rules follow through ON UPDATE CASCADE;
 // recurring items (their foreign key has no cascade) and budgets (no foreign key) are updated here, all in one
 // transaction so a failure leaves the old name everywhere.
@@ -737,17 +754,8 @@ func (a *app) patchCategory(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &in) {
 		return
 	}
-	var cur Category
-	err := a.db.QueryRow(`SELECT id, name, type, custom FROM categories WHERE id = ?`, id).Scan(&cur.ID, &cur.Name, &cur.Type, &cur.Custom)
-	if errors.Is(err, sql.ErrNoRows) {
-		writeErr(w, http.StatusNotFound, "not found")
-		return
-	} else if err != nil {
-		a.fail(w, err)
-		return
-	}
-	if !cur.Custom {
-		writeErr(w, http.StatusForbidden, "built-in categories cannot be renamed")
+	cur, ok := a.customCategory(w, id, "renamed")
+	if !ok {
 		return
 	}
 	if in.Name == nil {
@@ -815,17 +823,8 @@ func (a *app) deleteCategory(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var cur Category
-	err := a.db.QueryRow(`SELECT id, name, type, custom FROM categories WHERE id = ?`, id).Scan(&cur.ID, &cur.Name, &cur.Type, &cur.Custom)
-	if errors.Is(err, sql.ErrNoRows) {
-		writeErr(w, http.StatusNotFound, "not found")
-		return
-	} else if err != nil {
-		a.fail(w, err)
-		return
-	}
-	if !cur.Custom {
-		writeErr(w, http.StatusForbidden, "built-in categories cannot be deleted")
+	cur, ok := a.customCategory(w, id, "deleted")
+	if !ok {
 		return
 	}
 	tx, err := a.db.Begin()
