@@ -8,7 +8,6 @@
   import Review from './Review.svelte'
   import Assets from './Assets.svelte'
   import Budget from './Budget.svelte'
-  import Analytics from './Analytics.svelte'
   import Rules from './Rules.svelte'
   import Calendar from './Calendar.svelte'
   import TxSheet from './TxSheet.svelte'
@@ -92,7 +91,7 @@
     {:else if route === '/budget'}
       <Budget />
     {:else if route === '/analytics'}
-      <Analytics />
+      {#await import('./Analytics.svelte') then { default: Analytics }}<Analytics />{/await}
     {:else if route === '/calendar'}
       <Calendar {open} />
     {:else if route === '/rules'}

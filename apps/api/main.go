@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"database/sql"
 	"embed"
@@ -223,6 +225,7 @@ func spa() http.Handler {
 	mime.AddExtensionType(".webmanifest", "application/manifest+json")
 	dist, _ := fs.Sub(webFS, "web/dist")
 	files := http.FileServerFS(dist)
+	gz := gzipText(dist)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p := strings.TrimPrefix(path.Clean(r.URL.Path), "/")
 		if strings.HasPrefix(p, "assets/") { // content-hashed by Vite
@@ -230,12 +233,46 @@ func spa() http.Handler {
 		} else {
 			w.Header().Set("Cache-Control", "no-cache") // index.html, sw.js, manifest must revalidate
 		}
-		if p != "" {
-			if _, err := fs.Stat(dist, p); err != nil {
-				http.ServeFileFS(w, r, dist, "index.html")
-				return
-			}
+		name := p
+		if p == "" {
+			name = "index.html"
+		} else if _, err := fs.Stat(dist, p); err != nil {
+			name = "index.html"
+		}
+		w.Header().Add("Vary", "Accept-Encoding")
+		if b, ok := gz[name]; ok && strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+			w.Header().Set("Content-Encoding", "gzip")
+			w.Header().Set("Content-Type", mime.TypeByExtension(path.Ext(name)))
+			http.ServeContent(w, r, name, time.Time{}, bytes.NewReader(b))
+			return
+		}
+		if name != p {
+			http.ServeFileFS(w, r, dist, name)
+			return
 		}
 		files.ServeHTTP(w, r)
 	})
+}
+
+// gzipText compresses the embedded text assets once at startup (~70% smaller JS/CSS on the wire).
+func gzipText(dist fs.FS) map[string][]byte {
+	out := map[string][]byte{}
+	fs.WalkDir(dist, ".", func(p string, d fs.DirEntry, err error) error {
+		switch path.Ext(p) {
+		case ".js", ".css", ".html", ".webmanifest", ".svg":
+		default:
+			return err
+		}
+		b, err := fs.ReadFile(dist, p)
+		if err != nil {
+			return err
+		}
+		var buf bytes.Buffer
+		zw, _ := gzip.NewWriterLevel(&buf, gzip.BestCompression)
+		zw.Write(b)
+		zw.Close()
+		out[p] = buf.Bytes()
+		return nil
+	})
+	return out
 }
