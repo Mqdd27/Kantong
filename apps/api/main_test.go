@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bufio"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"io"
@@ -1143,5 +1144,40 @@ func TestDeleteCategory(t *testing.T) {
 	// the old name is rejected for new transactions
 	if code := call(t, srv, "POST", "/api/transactions", `{"amount":1,"type":"out","category":"Sedekah","merchant":"x","source":"manual"}`, nil); code != 400 {
 		t.Errorf("post with deleted category = %d, want 400", code)
+	}
+}
+
+func TestSPAGzip(t *testing.T) {
+	h := spa()
+	for _, p := range []string{"/", "/analytics"} {
+		r := httptest.NewRequest("GET", p, nil)
+		r.Header.Set("Accept-Encoding", "gzip, br")
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != 200 || w.Header().Get("Content-Encoding") != "gzip" || !strings.HasPrefix(w.Header().Get("Content-Type"), "text/html") {
+			t.Fatalf("%s: code %d, headers %v", p, w.Code, w.Header())
+		}
+		zr, err := gzip.NewReader(w.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if b, _ := io.ReadAll(zr); !bytes.Contains(b, []byte("<html")) {
+			t.Fatalf("%s: body is not index.html", p)
+		}
+	}
+	w := httptest.NewRecorder() // no Accept-Encoding: plain body
+	h.ServeHTTP(w, httptest.NewRequest("GET", "/", nil))
+	if w.Header().Get("Content-Encoding") != "" || !strings.Contains(w.Body.String(), "<html") {
+		t.Fatalf("plain: %v", w.Header())
+	}
+}
+
+func TestSPAIndexRedirect(t *testing.T) {
+	r := httptest.NewRequest("GET", "/index.html", nil)
+	r.Header.Set("Accept-Encoding", "gzip")
+	w := httptest.NewRecorder()
+	spa().ServeHTTP(w, r)
+	if w.Code != http.StatusMovedPermanently {
+		t.Fatalf("/index.html = %d, want 301", w.Code)
 	}
 }
