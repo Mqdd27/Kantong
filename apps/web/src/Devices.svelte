@@ -23,7 +23,8 @@
   <span class="avatar"><Icon name={deviceIcon(x.user_agent)} /></span>
   <span class="main">
     <b>{deviceName(x.user_agent)}</b>
-    <span class="muted">{x.ip || 'IP tidak diketahui'} · masuk {fmtShort.format(new Date(x.created_at))}</span>
+    <span class="muted">{x.current ? 'online' : 'aktif ' + seen(x)} · {x.ip || 'IP tidak diketahui'}</span>
+    <span class="muted">masuk {fmtShort.format(new Date(x.created_at))}</span>
   </span>
 {/snippet}
 
@@ -34,7 +35,6 @@
   {#if mine}
     <div class="row">
       {@render device(mine)}
-      <span class="muted when">online</span>
     </div>
   {/if}
   <button class="danger wide" onclick={logout}><Icon name="logout" size={18} />Keluar</button>
@@ -57,7 +57,6 @@
   {#each others as x (x.id)}
     <div class="row">
       {@render device(x)}
-      <span class="muted when">{seen(x)}</span>
       <button class="danger" disabled={busy} onclick={() => run(() => endSession(x))}>Keluarkan</button>
     </div>
   {:else}
@@ -88,8 +87,8 @@
     gap: 2px;
     min-width: 0;
   }
-  .when {
-    white-space: nowrap;
+  .row:last-child {
+    border-bottom: 0;
   }
   button {
     padding: 6px 12px;
