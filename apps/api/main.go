@@ -192,6 +192,9 @@ func (a *app) routes() http.Handler {
 	api.HandleFunc("GET /api/chat/{id}", a.getChatSession)
 	api.HandleFunc("DELETE /api/chat/{id}", a.deleteChatSession)
 	api.HandleFunc("POST /api/insight", a.postInsight)
+	api.HandleFunc("GET /api/sessions", a.listSessions)
+	api.HandleFunc("DELETE /api/sessions/{id}", a.deleteSession)
+	api.HandleFunc("POST /api/sessions/revoke", a.revokeSessions)
 	api.HandleFunc("GET /api/fx", func(w http.ResponseWriter, r *http.Request) {
 		c, ok := normCurrency(r.URL.Query().Get("currency"))
 		if !ok {
@@ -209,6 +212,7 @@ func (a *app) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("ok")) })
 	mux.HandleFunc("POST /api/login", a.login)
+	mux.HandleFunc("POST /api/logout", a.logout)
 	mux.Handle("/api/", a.auth(api))
 	mux.Handle("/", spa())
 	return mux

@@ -91,7 +91,7 @@ curl http://127.0.0.1:8080/healthz   # -> ok
 |---|---|---|
 | `API_TOKEN` | – | Bearer token untuk agent/script |
 | `APP_PASSWORD` | – | Password login PWA |
-| `SESSION_SECRET` | – | Minimal 32 karakter, untuk tanda tangan cookie sesi |
+| `SESSION_SECRET` | – | Minimal 32 karakter, kunci HMAC untuk ID sesi di database. Menggantinya mengeluarkan semua perangkat |
 | `HOST_BIND` / `HOST_PORT` | `127.0.0.1` / `8080` | Alamat & port yang di-publish compose |
 | `COOKIE_SECURE` | `true` | Set `false` hanya kalau diakses lewat HTTP biasa (tanpa HTTPS, PWA tidak bisa di-install) |
 | `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | – | Notifikasi transaksi dari email; kosong = mati |
@@ -133,6 +133,10 @@ Semua endpoint `/api/*` butuh `Authorization: Bearer $API_TOKEN` atau cookie ses
 | `GET /api/fx?currency=USD` | Konversi Kurs ke IDR |
 | `GET /api/export.xlsx` | Export Semua transaksi (Excel) |
 | `GET /api/events` | Stream SSE |
+| `POST /api/logout` | Keluar dari perangkat ini: sesinya dihapus dan cookie dibersihkan (204). Tanpa auth, aman dipanggil berulang |
+| `GET /api/sessions` | Perangkat yang sedang login: `id`, `user_agent`, `ip`, `created_at`, `last_seen`, `current` (sesi pemanggil) |
+| `DELETE /api/sessions/{id}` | Keluarkan satu perangkat (204; 404 kalau sudah tidak ada). Stream SSE-nya ikut diputus |
+| `POST /api/sessions/revoke` | Keluarkan semua perangkat kecuali pemanggil (dengan `API_TOKEN`: semua perangkat). `API_TOKEN` sendiri tidak ikut dicabut; ganti nilainya di `.env` untuk memutus script |
 
 ```sh
 API=http://127.0.0.1:8080; AUTH="Authorization: Bearer $API_TOKEN"

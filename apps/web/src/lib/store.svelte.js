@@ -66,12 +66,17 @@ function remove(id) {
   if (i >= 0) s.txs.splice(i, 1)
 }
 
+/** Back to the login screen with nothing from the previous session left in memory. */
+function signedOut() {
+  es?.close()
+  clearTimeout(retry)
+  Object.assign(s, { authed: false, live: false, txs: [], categories: [], history: [], budget: null, recurring: [], chat: false,
+    portfolio: { assets: [], total_idr: 0, pending_orders: [], missing_rates: [] } })
+}
+
 let errTimer
 function fail(e) {
-  if (e instanceof AuthError) {
-    s.authed = false
-    return
-  }
+  if (e instanceof AuthError) return signedOut()
   s.error = e.message
   clearTimeout(errTimer)
   errTimer = setTimeout(() => (s.error = ''), 4000)
@@ -238,6 +243,38 @@ export async function login(password) {
   await api('/login', { method: 'POST', body: { password } })
   s.authed = true
 }
+
+export async function logout() {
+  try {
+    await api('/logout', { method: 'POST' })
+    signedOut()
+  } catch (e) {
+    fail(e)
+  }
+}
+
+// ---- devices (login sessions) ----
+export const loadSessions = () => api('/sessions').catch((e) => (fail(e), []))
+/** Signs one device out; signing out this device returns to the login screen. Returns true on success. */
+export async function endSession(sess) {
+  try {
+    await api(`/sessions/${encodeURIComponent(sess.id)}`, { method: 'DELETE' })
+    if (sess.current) signedOut()
+    return true
+  } catch (e) {
+    fail(e)
+  }
+}
+export const revokeOthers = () => act('/sessions/revoke', 'POST')
+
+/** "iPhone · Safari" from a User-Agent. iPadOS Safari claims to be a Mac, so it shows as Mac. */
+export function deviceName(ua = '') {
+  const os = [['iPhone', 'iPhone'], ['iPad', 'iPad'], ['Android', 'Android'], ['Macintosh', 'Mac'], ['Windows', 'Windows'], ['Linux', 'Linux']].find(([k]) => ua.includes(k))?.[1]
+  const app = [['Edg', 'Edge'], ['Firefox', 'Firefox'], ['FxiOS', 'Firefox'], ['CriOS', 'Chrome'], ['Chrome', 'Chrome'], ['Safari', 'Safari']].find(([k]) => ua.includes(k))?.[1]
+  // iOS home-screen apps drop "Safari" from the UA
+  return [os ?? 'Perangkat lain', app ?? (os === 'iPhone' || os === 'iPad' ? 'Aplikasi' : '')].filter(Boolean).join(' · ')
+}
+export const deviceIcon = (ua = '') => (/iPhone|Android.*Mobile/.test(ua) ? 'phone' : /iPad|Android/.test(ua) ? 'tablet' : 'laptop')
 
 // ---- assets ----
 export const CURRENCIES = ['IDR', 'USD', 'SGD', 'CNY', 'JPY', 'KRW', 'EUR', 'AUD', 'GBP', 'HKD', 'MYR', 'THB', 'XAU']

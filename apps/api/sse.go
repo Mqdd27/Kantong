@@ -10,17 +10,29 @@ import (
 
 type hub struct {
 	mu      sync.Mutex
-	clients map[chan []byte]struct{}
+	clients map[chan []byte]string // stream -> session id ("" for API_TOKEN)
 }
 
-func newHub() *hub { return &hub{clients: map[chan []byte]struct{}{}} }
+func newHub() *hub { return &hub{clients: map[chan []byte]string{}} }
 
-func (h *hub) subscribe() chan []byte {
+func (h *hub) subscribe(sid string) chan []byte {
 	c := make(chan []byte, 16)
 	h.mu.Lock()
-	h.clients[c] = struct{}{}
+	h.clients[c] = sid
 	h.mu.Unlock()
 	return c
+}
+
+// kick closes the streams of a signed-out session; the handler sees the closed channel and returns.
+func (h *hub) kick(sid string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for c, s := range h.clients {
+		if s == sid {
+			delete(h.clients, c)
+			close(c)
+		}
+	}
 }
 
 func (h *hub) unsubscribe(c chan []byte) {
@@ -52,7 +64,7 @@ func (a *app) events(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("X-Accel-Buffering", "no")
-	c := a.hub.subscribe()
+	c := a.hub.subscribe(sessionID(r))
 	defer a.hub.unsubscribe(c)
 
 	w.Write([]byte(": connected\n\n"))
