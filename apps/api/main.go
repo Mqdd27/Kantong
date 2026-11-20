@@ -240,7 +240,8 @@ func spa() http.Handler {
 			name = "index.html"
 		}
 		w.Header().Add("Vary", "Accept-Encoding")
-		if b, ok := gz[name]; ok && strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+		// p == "index.html" falls through: FileServer redirects /index.html to /
+		if b, ok := gz[name]; ok && p != "index.html" && strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
 			w.Header().Set("Content-Encoding", "gzip")
 			w.Header().Set("Content-Type", mime.TypeByExtension(path.Ext(name)))
 			http.ServeContent(w, r, name, time.Time{}, bytes.NewReader(b))

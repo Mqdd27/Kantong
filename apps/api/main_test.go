@@ -1149,7 +1149,7 @@ func TestDeleteCategory(t *testing.T) {
 
 func TestSPAGzip(t *testing.T) {
 	h := spa()
-	for _, p := range []string{"/", "/analytics", "/index.html"} {
+	for _, p := range []string{"/", "/analytics"} {
 		r := httptest.NewRequest("GET", p, nil)
 		r.Header.Set("Accept-Encoding", "gzip, br")
 		w := httptest.NewRecorder()
@@ -1169,5 +1169,15 @@ func TestSPAGzip(t *testing.T) {
 	h.ServeHTTP(w, httptest.NewRequest("GET", "/", nil))
 	if w.Header().Get("Content-Encoding") != "" || !strings.Contains(w.Body.String(), "<html") {
 		t.Fatalf("plain: %v", w.Header())
+	}
+}
+
+func TestSPAIndexRedirect(t *testing.T) {
+	r := httptest.NewRequest("GET", "/index.html", nil)
+	r.Header.Set("Accept-Encoding", "gzip")
+	w := httptest.NewRecorder()
+	spa().ServeHTTP(w, r)
+	if w.Code != http.StatusMovedPermanently {
+		t.Fatalf("/index.html = %d, want 301", w.Code)
 	}
 }
