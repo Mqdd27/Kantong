@@ -100,6 +100,10 @@ export async function api(path, { method = 'GET', body } = {}) {
     list.splice(list.indexOf(c), 1)
     return { moved_to: 'Lainnya', transactions: 0, rules_deleted: 0 }
   }
+  if (route === '/sessions' && method === 'GET') return [
+    { id: 'a', user_agent: navigator.userAgent, ip: '100.64.0.2', created_at: `${now}-01T02:00:00Z`, last_seen: new Date().toISOString(), current: true },
+    { id: 'b', user_agent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148', ip: '100.64.0.3', created_at: `${now}-02T01:00:00Z`, last_seen: `${now}-10T12:30:00Z`, current: false },
+  ]
   if (route === '/insight') return { month: body.month, months: body.months, text: reply }
 
   if (method !== 'GET') return null // other writes are accepted and forgotten

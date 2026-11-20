@@ -1,6 +1,6 @@
 <script>
   import { untrack } from 'svelte'
-  import { s, load, connect } from './lib/store.svelte.js'
+  import { s, load, connect, logout } from './lib/store.svelte.js'
   import Icon from './Icon.svelte'
   import Login from './Login.svelte'
   import Home from './Home.svelte'
@@ -13,6 +13,7 @@
   import Calendar from './Calendar.svelte'
   import TxSheet from './TxSheet.svelte'
   import Chat from './Chat.svelte'
+  import Devices from './Devices.svelte'
   import { api } from './lib/api.js'
 
   // "#/tx?cat=Makan": route is the part before "?", the rest are page params
@@ -36,7 +37,7 @@
   })
 
   // which tab lights up for routes that live under another one
-  const PARENT = { '/calendar': '/tx', '/review': '/tx', '/rules': '/tx', '/analytics': '/', '/chat': '/' }
+  const PARENT = { '/calendar': '/tx', '/review': '/tx', '/rules': '/tx', '/analytics': '/', '/chat': '/', '/devices': '/' }
   const here = $derived(PARENT[route] ?? route)
 
   // phone: four tabs around the add button; the rest is reached from these pages
@@ -51,7 +52,7 @@
     ['/analytics', 'Analitik', 'chart'],
     ['/assets', 'Aset', 'wallet'],
   ]
-  const more = $derived([...(s.chat ? [['/chat', 'Asisten', 'chat']] : []), ['/review', 'Review', 'inbox'], ['/rules', 'Aturan kategori', 'tag']])
+  const more = $derived([...(s.chat ? [['/chat', 'Asisten', 'chat']] : []), ['/review', 'Review', 'inbox'], ['/rules', 'Aturan kategori', 'tag'], ['/devices', 'Perangkat', 'laptop']])
 </script>
 
 {#if !s.authed}
@@ -74,10 +75,11 @@
         </a>
       {/each}
       <a href="api/export.xlsx" download><Icon name="download" />Export Excel</a>
+      <button class="out" onclick={logout}><Icon name="logout" />Keluar</button>
     </nav>
   </aside>
 
-  <main class:narrow={route === '/tx' || route === '/review' || route === '/rules' || route === '/calendar' || route === '/chat'}>
+  <main class:narrow={route === '/tx' || route === '/review' || route === '/rules' || route === '/calendar' || route === '/chat' || route === '/devices'}>
     {#if import.meta.env.MODE === 'demo'}
       <p class="demo">Demo dengan data contoh. Perubahan hilang saat halaman dimuat ulang. <a href="https://github.com/Mqdd27/Kantong">Dokumentasi</a></p>
     {/if}
@@ -95,6 +97,8 @@
       <Calendar {open} />
     {:else if route === '/rules'}
       <Rules />
+    {:else if route === '/devices'}
+      <Devices />
     {:else if route === '/chat' && s.chat}
       <Chat />
     {:else}
@@ -224,7 +228,8 @@
     display: grid;
     gap: 2px;
   }
-  aside nav a {
+  aside nav a,
+  aside nav .out {
     display: flex;
     align-items: center;
     gap: 12px;
@@ -235,7 +240,14 @@
     font-size: 15px;
     font-weight: 500;
   }
-  aside nav a:hover {
+  aside nav .out {
+    border: 0;
+    background: none;
+    text-align: left;
+    font-family: inherit;
+  }
+  aside nav a:hover,
+  aside nav .out:hover {
     color: var(--text);
     background: var(--bg);
   }

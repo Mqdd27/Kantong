@@ -5,7 +5,7 @@ vi.stubGlobal('localStorage', { hide: '' })
 vi.mock('./api.js', async (orig) => ({ ...(await orig()), api: vi.fn() }))
 const { api, AuthError } = await import('./api.js')
 const st = await import('./store.svelte.js')
-const { s, view, mask, fmtIDR, shiftMonth, jakartaLocal, fmtMonth, freqLabel, updateTx, act, addRule, editRule } = st
+const { s, view, mask, fmtIDR, shiftMonth, jakartaLocal, fmtMonth, freqLabel, updateTx, act, addRule, editRule, logout, endSession, deviceName } = st
 
 beforeEach(() => {
   vi.useFakeTimers()
@@ -136,4 +136,54 @@ describe('rules', () => {
     await editRule(3, { category: 'Jajan' })
     expect(api).toHaveBeenCalledWith('/rules/3', { method: 'PATCH', body: { category: 'Jajan' } })
   })
+})
+
+describe('logout', () => {
+  test('signs out and clears the previous session\'s data', async () => {
+    api.mockResolvedValue(null)
+    s.txs = [{ id: 1 }]
+    s.budget = { x: 1 }
+    s.portfolio = { assets: [{ id: 1 }], total_idr: 5, pending_orders: [], missing_rates: [] }
+    await logout()
+    expect(api).toHaveBeenCalledWith('/logout', { method: 'POST' })
+    expect(s.authed).toBe(false)
+    expect(s.txs).toEqual([])
+    expect(s.budget).toBe(null)
+    expect(s.portfolio.assets).toEqual([])
+  })
+
+  test('stays signed in when the request fails', async () => {
+    api.mockRejectedValue(new Error('offline'))
+    s.txs = [{ id: 1 }]
+    await logout()
+    expect(s.authed).toBe(true)
+    expect(s.txs).toHaveLength(1)
+    expect(s.error).toBe('offline')
+  })
+})
+
+describe('endSession', () => {
+  test('another device: stays signed in', async () => {
+    api.mockResolvedValue(null)
+    expect(await endSession({ id: 'a/b', current: false })).toBe(true)
+    expect(api).toHaveBeenCalledWith('/sessions/a%2Fb', { method: 'DELETE' })
+    expect(s.authed).toBe(true)
+  })
+  test('this device: back to login', async () => {
+    api.mockResolvedValue(null)
+    await endSession({ id: 'x', current: true })
+    expect(s.authed).toBe(false)
+  })
+})
+
+describe('deviceName', () => {
+  test.each([
+    ['Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1', 'iPhone · Safari'],
+    ['Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148', 'iPhone · Aplikasi'],
+    ['Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36', 'Mac · Chrome'],
+    ['Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36 Edg/130.0', 'Windows · Edge'],
+    ['Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36', 'Android · Chrome'],
+    ['curl/8.0', 'Perangkat lain'],
+    ['', 'Perangkat lain'],
+  ])('%s', (ua, want) => expect(deviceName(ua)).toBe(want))
 })
