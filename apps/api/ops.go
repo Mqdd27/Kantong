@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -27,9 +25,10 @@ func (a *app) applyRule(uid int64, t *Tx) {
 	}
 }
 
-// notify sends a Telegram message for a transaction that came from email.
+// notify sends a Telegram message for a transaction that came from email, through the account's own bot.
 func (a *app) notify(uid int64, t Tx) {
-	if a.cfg.tgToken == "" || a.cfg.tgChat == "" || uid != a.ownerID {
+	token, chat := a.telegramFor(uid)
+	if token == "" || chat == "" {
 		return
 	}
 	verb := map[string]string{"in": "Masuk", "out": "Keluar", "transfer": "Transfer"}[t.Type]
@@ -44,15 +43,8 @@ func (a *app) notify(uid int64, t Tx) {
 		text += " (perlu review)"
 	}
 	go func() {
-		c := http.Client{Timeout: 10 * time.Second}
-		res, err := c.PostForm(a.cfg.tgAPI+"/bot"+a.cfg.tgToken+"/sendMessage", url.Values{"chat_id": {a.cfg.tgChat}, "text": {text}})
-		if err != nil {
-			slog.Warn("telegram", "err", strings.ReplaceAll(err.Error(), a.cfg.tgToken, "***")) // URL holds the token
-			return
-		}
-		res.Body.Close()
-		if res.StatusCode != http.StatusOK {
-			slog.Warn("telegram", "status", res.StatusCode)
+		if err := a.sendTelegram(token, chat, text); err != nil {
+			slog.Warn("telegram", "user", uid, "err", err)
 		}
 	}()
 }

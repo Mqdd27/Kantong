@@ -253,6 +253,11 @@ export async function logout() {
   }
 }
 
+// ---- account ----
+export const loadMe = () => api('/me').catch((e) => (fail(e), null))
+/** Connects (or with empty values disconnects) this account's Telegram bot. Returns the new /me, or throws the server's message. */
+export const saveTelegram = (bot_token, chat_id) => api('/me/telegram', { method: 'PUT', body: { bot_token, chat_id } })
+
 // ---- devices (login sessions) ----
 export const loadSessions = () => api('/sessions').catch((e) => (fail(e), []))
 /** Signs one device out; signing out this device returns to the login screen. Returns true on success. */
