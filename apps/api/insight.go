@@ -42,7 +42,7 @@ type insightMonth struct {
 
 // insightData reads the same numbers as /api/summary for each of the last `months` months ending at `end`,
 // with Investasi split out as saving like the Analytics page does.
-func (a *app) insightData(end string, months int) ([]insightMonth, error) {
+func (a *app) insightData(uid int64, end string, months int) ([]insightMonth, error) {
 	endT, err := time.Parse("2006-01", end)
 	if err != nil {
 		return nil, fmt.Errorf("month must be YYYY-MM")
@@ -52,7 +52,7 @@ func (a *app) insightData(end string, months int) ([]insightMonth, error) {
 		from := endT.AddDate(0, -i, 0).Format("2006-01")
 		to := endT.AddDate(0, -i+1, 0).Format("2006-01")
 		rows, err := a.db.Query(`SELECT type, category, SUM(amount) FROM transactions
-			WHERE occurred_at >= ? AND occurred_at < ? GROUP BY type, category`, from, to)
+			WHERE user_id = ? AND occurred_at >= ? AND occurred_at < ? GROUP BY type, category`, uid, from, to)
 		if err != nil {
 			return nil, err
 		}
@@ -201,7 +201,7 @@ func (a *app) postInsight(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "unknown model")
 		return
 	}
-	ms, err := a.insightData(in.Month, in.Months)
+	ms, err := a.insightData(userID(r), in.Month, in.Months)
 	if err != nil {
 		a.fail(w, err)
 		return

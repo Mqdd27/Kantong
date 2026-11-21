@@ -55,9 +55,10 @@ func (a *app) budget(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// effective limit = latest row at or before this month
+	uid := userID(r)
 	rows, err := a.db.Query(`SELECT b.category, b.amount FROM budgets b
-		WHERE b.month = (SELECT MAX(month) FROM budgets WHERE category = b.category AND month <= ?) AND b.amount > 0
-		ORDER BY b.amount DESC`, from)
+		WHERE b.user_id = ?1 AND b.month = (SELECT MAX(month) FROM budgets WHERE user_id = ?1 AND category = b.category AND month <= ?2) AND b.amount > 0
+		ORDER BY b.amount DESC`, uid, from)
 	if err != nil {
 		a.fail(w, err)
 		return
@@ -80,9 +81,9 @@ func (a *app) budget(w http.ResponseWriter, r *http.Request) {
 	rows.Close()
 
 	rows, err = a.db.Query(`SELECT t.category, SUM(t.amount), c.in_budget FROM transactions t
-		JOIN categories c ON c.name = t.category AND c.type = t.type
-		WHERE t.type = 'out' AND t.occurred_at >= ? AND t.occurred_at < ?
-		GROUP BY t.category ORDER BY SUM(t.amount) DESC`, from, to)
+		JOIN categories c ON c.user_id = t.user_id AND c.name = t.category AND c.type = t.type
+		WHERE t.user_id = ? AND t.type = 'out' AND t.occurred_at >= ? AND t.occurred_at < ?
+		GROUP BY t.category ORDER BY SUM(t.amount) DESC`, uid, from, to)
 	if err != nil {
 		a.fail(w, err)
 		return
@@ -108,11 +109,11 @@ func (a *app) budget(w http.ResponseWriter, r *http.Request) {
 	// excluded categories that only have a limit still need their flag
 	for _, l := range lines {
 		if l.Spent == 0 {
-			a.db.QueryRow(`SELECT in_budget FROM categories WHERE type = 'out' AND name = ?`, l.Category).Scan(&l.InBudget)
+			a.db.QueryRow(`SELECT in_budget FROM categories WHERE user_id = ? AND type = 'out' AND name = ?`, uid, l.Category).Scan(&l.InBudget)
 		}
 	}
 
-	upcoming, err := a.upcoming(r.Context(), from, to)
+	upcoming, err := a.upcoming(r.Context(), uid, from, to)
 	if err != nil {
 		a.fail(w, err)
 		return
@@ -157,15 +158,16 @@ func (a *app) setBudget(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "amount must be >= 0")
 		return
 	}
-	if b.Category != "" && !a.categoryExists(b.Category, "out") {
+	uid := userID(r)
+	if b.Category != "" && !a.categoryExists(uid, b.Category, "out") {
 		writeErr(w, http.StatusBadRequest, "unknown expense category")
 		return
 	}
-	if _, err := a.db.Exec(`INSERT OR REPLACE INTO budgets (month, category, amount) VALUES (?, ?, ?)`, b.Month, b.Category, b.Amount); err != nil {
+	if _, err := a.db.Exec(`INSERT OR REPLACE INTO budgets (user_id, month, category, amount) VALUES (?, ?, ?, ?)`, uid, b.Month, b.Category, b.Amount); err != nil {
 		a.fail(w, err)
 		return
 	}
-	a.hub.publish("budget.changed", map[string]any{})
+	a.hub.publish(uid, "budget.changed", map[string]any{})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -187,13 +189,14 @@ type Recurring struct {
 	Auto       bool     `json:"auto"`
 	Mask       int      `json:"mask"` // weekly: bit 0 = Sunday … 6 = Saturday; monthly: bit 0 = Jan … 11 = Dec; 0 = every period
 	day        int
+	uid        int64 // owner, so the background poster books occurrences to the right account
 }
 
-const recCols = `id, type, category, merchant, account, to_account, note, amount, currency, orig_amount, freq, next_date, auto, day, mask`
+const recCols = `user_id, id, type, category, merchant, account, to_account, note, amount, currency, orig_amount, freq, next_date, auto, day, mask`
 
 func scanRec(s scanner) (Recurring, error) {
 	var x Recurring
-	err := s.Scan(&x.ID, &x.Type, &x.Category, &x.Merchant, &x.Account, &x.ToAccount, &x.Note, &x.Amount, &x.Currency, &x.OrigAmount,
+	err := s.Scan(&x.uid, &x.ID, &x.Type, &x.Category, &x.Merchant, &x.Account, &x.ToAccount, &x.Note, &x.Amount, &x.Currency, &x.OrigAmount,
 		&x.Freq, &x.NextDate, &x.Auto, &x.day, &x.Mask)
 	return x, err
 }
@@ -252,6 +255,8 @@ func (x Recurring) tx(date string) Tx {
 		Currency: x.Currency, OrigAmount: x.OrigAmount}
 }
 
+// recurrings lists recurring items matching where (which must filter user_id unless the caller
+// serves every account, like postDue).
 func (a *app) recurrings(ctx context.Context, where string, args ...any) ([]Recurring, error) {
 	rows, err := a.db.QueryContext(ctx, `SELECT `+recCols+` FROM recurring `+where+` ORDER BY next_date, id`, args...)
 	if err != nil {
@@ -270,8 +275,8 @@ func (a *app) recurrings(ctx context.Context, where string, args ...any) ([]Recu
 }
 
 // upcoming lists occurrences not yet posted in [from, to) months; for the current month overdue ones are included.
-func (a *app) upcoming(ctx context.Context, from, to string) ([]Upcoming, error) {
-	recs, err := a.recurrings(ctx, "")
+func (a *app) upcoming(ctx context.Context, uid int64, from, to string) ([]Upcoming, error) {
+	recs, err := a.recurrings(ctx, "WHERE user_id = ?", uid)
 	if err != nil {
 		return nil, err
 	}
@@ -299,7 +304,7 @@ func (a *app) upcoming(ctx context.Context, from, to string) ([]Upcoming, error)
 }
 
 func (a *app) listRecurring(w http.ResponseWriter, r *http.Request) {
-	recs, err := a.recurrings(r.Context(), "")
+	recs, err := a.recurrings(r.Context(), "WHERE user_id = ?", userID(r))
 	if err != nil {
 		a.fail(w, err)
 		return
@@ -319,6 +324,7 @@ func (a *app) checkRec(w http.ResponseWriter, r *http.Request, x *Recurring) boo
 		return false
 	}
 	t := x.tx(x.NextDate)
+	x.uid = userID(r)
 	if !a.validateTx(w, r, &t) {
 		return false
 	}
@@ -338,8 +344,8 @@ func (a *app) createRecurring(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &x) || !a.checkRec(w, r, &x) {
 		return
 	}
-	res, err := a.db.Exec(`INSERT INTO recurring (type, category, merchant, account, to_account, note, amount, currency, orig_amount, freq, day, next_date, auto, mask)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, x.Type, x.Category, x.Merchant, x.Account, x.ToAccount, x.Note, x.Amount, x.Currency,
+	res, err := a.db.Exec(`INSERT INTO recurring (user_id, type, category, merchant, account, to_account, note, amount, currency, orig_amount, freq, day, next_date, auto, mask)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, x.uid, x.Type, x.Category, x.Merchant, x.Account, x.ToAccount, x.Note, x.Amount, x.Currency,
 		x.OrigAmount, x.Freq, x.day, x.NextDate, x.Auto, x.Mask)
 	if err != nil {
 		a.fail(w, err)
@@ -347,7 +353,7 @@ func (a *app) createRecurring(w http.ResponseWriter, r *http.Request) {
 	}
 	x.ID, _ = res.LastInsertId()
 	a.postDue(r.Context()) // an auto item dated today or earlier posts right away
-	a.hub.publish("budget.changed", map[string]any{})
+	a.hub.publish(x.uid, "budget.changed", map[string]any{})
 	writeJSON(w, http.StatusCreated, x)
 }
 
@@ -356,7 +362,7 @@ func (a *app) getRec(w http.ResponseWriter, r *http.Request) (Recurring, bool) {
 	if !ok {
 		return Recurring{}, false
 	}
-	x, err := scanRec(a.db.QueryRow(`SELECT `+recCols+` FROM recurring WHERE id = ?`, id))
+	x, err := scanRec(a.db.QueryRow(`SELECT `+recCols+` FROM recurring WHERE id = ? AND user_id = ?`, id, userID(r)))
 	if errors.Is(err, sql.ErrNoRows) {
 		writeErr(w, http.StatusNotFound, "not found")
 		return x, false
@@ -373,14 +379,14 @@ func (a *app) patchRecurring(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_, err := a.db.Exec(`UPDATE recurring SET type = ?, category = ?, merchant = ?, account = ?, to_account = ?, note = ?, amount = ?, currency = ?,
-		orig_amount = ?, freq = ?, day = ?, next_date = ?, auto = ?, mask = ? WHERE id = ?`, x.Type, x.Category, x.Merchant, x.Account, x.ToAccount, x.Note,
-		x.Amount, x.Currency, x.OrigAmount, x.Freq, x.day, x.NextDate, x.Auto, x.Mask, x.ID)
+		orig_amount = ?, freq = ?, day = ?, next_date = ?, auto = ?, mask = ? WHERE id = ? AND user_id = ?`, x.Type, x.Category, x.Merchant, x.Account, x.ToAccount, x.Note,
+		x.Amount, x.Currency, x.OrigAmount, x.Freq, x.day, x.NextDate, x.Auto, x.Mask, x.ID, x.uid)
 	if err != nil {
 		a.fail(w, err)
 		return
 	}
 	a.postDue(r.Context())
-	a.hub.publish("budget.changed", map[string]any{})
+	a.hub.publish(x.uid, "budget.changed", map[string]any{})
 	writeJSON(w, http.StatusOK, x)
 }
 
@@ -389,11 +395,11 @@ func (a *app) deleteRecurring(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if _, err := a.db.Exec(`DELETE FROM recurring WHERE id = ?`, x.ID); err != nil {
+	if _, err := a.db.Exec(`DELETE FROM recurring WHERE id = ? AND user_id = ?`, x.ID, x.uid); err != nil {
 		a.fail(w, err)
 		return
 	}
-	a.hub.publish("budget.changed", map[string]any{})
+	a.hub.publish(x.uid, "budget.changed", map[string]any{})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -409,27 +415,27 @@ func (a *app) advanceRecurring(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if _, err := a.db.Exec(`UPDATE recurring SET next_date = ? WHERE id = ?`, x.next(x.NextDate), x.ID); err != nil {
+	if _, err := a.db.Exec(`UPDATE recurring SET next_date = ? WHERE id = ? AND user_id = ?`, x.next(x.NextDate), x.ID, x.uid); err != nil {
 		a.fail(w, err)
 		return
 	}
-	a.hub.publish("budget.changed", map[string]any{})
+	a.hub.publish(x.uid, "budget.changed", map[string]any{})
 	w.WriteHeader(http.StatusNoContent)
 }
 
 // postOccurrence records x's next occurrence; already-recorded occurrences are ignored.
 func (a *app) postOccurrence(ctx context.Context, x Recurring) error {
 	t := x.tx(x.NextDate)
-	if body := a.checkTx(ctx, &t); body != nil {
+	if body := a.checkTx(ctx, x.uid, &t); body != nil {
 		return fmt.Errorf("%v", body["error"])
 	}
-	if err := a.insertTx(&t); err != nil && !strings.Contains(err.Error(), "UNIQUE") {
+	if err := a.insertTx(x.uid, &t); err != nil && !strings.Contains(err.Error(), "UNIQUE") {
 		return err
 	}
 	return nil
 }
 
-// postDue records every auto occurrence dated today or earlier.
+// postDue records every auto occurrence dated today or earlier, for every account.
 func (a *app) postDue(ctx context.Context) {
 	recs, err := a.recurrings(ctx, `WHERE auto = 1 AND next_date <= ?`, today())
 	if err != nil {
@@ -454,7 +460,7 @@ func (a *app) postDue(ctx context.Context) {
 // ---------- export ----------
 
 func (a *app) exportXLSX(w http.ResponseWriter, r *http.Request) {
-	rows, err := a.db.Query(`SELECT ` + txCols + ` FROM transactions ORDER BY occurred_at, id`)
+	rows, err := a.db.Query(`SELECT `+txCols+` FROM transactions WHERE user_id = ? ORDER BY occurred_at, id`, userID(r))
 	if err != nil {
 		a.fail(w, err)
 		return

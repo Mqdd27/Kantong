@@ -14,13 +14,13 @@ import (
 )
 
 // applyRule overrides type/category from the most specific matching rule.
-func (a *app) applyRule(t *Tx) {
+func (a *app) applyRule(uid int64, t *Tx) {
 	if t.Merchant == "" {
 		return
 	}
 	err := a.db.QueryRow(`SELECT type, category FROM rules
-		WHERE match = 'contains' AND instr(lower(?), lower(pattern)) > 0
-		ORDER BY length(pattern) DESC, id DESC LIMIT 1`, strings.TrimSpace(t.Merchant)).Scan(&t.Type, &t.Category)
+		WHERE user_id = ? AND match = 'contains' AND instr(lower(?), lower(pattern)) > 0
+		ORDER BY length(pattern) DESC, id DESC LIMIT 1`, uid, strings.TrimSpace(t.Merchant)).Scan(&t.Type, &t.Category)
 	if err == nil {
 		one := 1.0
 		t.Confidence, t.NeedsReview = &one, false
@@ -28,8 +28,8 @@ func (a *app) applyRule(t *Tx) {
 }
 
 // notify sends a Telegram message for a transaction that came from email.
-func (a *app) notify(t Tx) {
-	if a.cfg.tgToken == "" || a.cfg.tgChat == "" {
+func (a *app) notify(uid int64, t Tx) {
+	if a.cfg.tgToken == "" || a.cfg.tgChat == "" || uid != a.ownerID {
 		return
 	}
 	verb := map[string]string{"in": "Masuk", "out": "Keluar", "transfer": "Transfer"}[t.Type]

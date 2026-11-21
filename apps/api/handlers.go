@@ -107,14 +107,14 @@ func monthRange(r *http.Request) (string, string, error) {
 
 func validType(t string) bool { return t == "in" || t == "out" || t == "transfer" }
 
-func (a *app) categoryExists(name, typ string) bool {
+func (a *app) categoryExists(uid int64, name, typ string) bool {
 	var n int
-	a.db.QueryRow(`SELECT COUNT(*) FROM categories WHERE name = ? AND type = ?`, name, typ).Scan(&n)
+	a.db.QueryRow(`SELECT COUNT(*) FROM categories WHERE user_id = ? AND name = ? AND type = ?`, uid, name, typ).Scan(&n)
 	return n > 0
 }
 
-func (a *app) categories() ([]Category, error) {
-	rows, err := a.db.Query(`SELECT id, name, type, custom FROM categories ORDER BY type, id`)
+func (a *app) categories(uid int64) ([]Category, error) {
+	rows, err := a.db.Query(`SELECT id, name, type, custom FROM categories WHERE user_id = ? ORDER BY type, id`, uid)
 	if err != nil {
 		return nil, err
 	}
@@ -132,7 +132,7 @@ func (a *app) categories() ([]Category, error) {
 
 // validateTx normalizes and checks t; it writes the error response and returns false on failure.
 func (a *app) validateTx(w http.ResponseWriter, r *http.Request, t *Tx) bool {
-	if body := a.checkTx(r.Context(), t); body != nil {
+	if body := a.checkTx(r.Context(), userID(r), t); body != nil {
 		writeJSON(w, http.StatusBadRequest, body)
 		return false
 	}
@@ -142,7 +142,7 @@ func (a *app) validateTx(w http.ResponseWriter, r *http.Request, t *Tx) bool {
 func badTx(msg string) map[string]any { return map[string]any{"error": msg} }
 
 // checkTx normalizes t and returns an error body, or nil when t is valid.
-func (a *app) checkTx(ctx context.Context, t *Tx) map[string]any {
+func (a *app) checkTx(ctx context.Context, uid int64, t *Tx) map[string]any {
 	if t.OccurredAt == "" {
 		t.OccurredAt = time.Now().In(wib).Format(time.RFC3339)
 	}
@@ -191,8 +191,8 @@ func (a *app) checkTx(ctx context.Context, t *Tx) map[string]any {
 	if msg != "" {
 		return badTx(msg)
 	}
-	if !a.categoryExists(t.Category, t.Type) {
-		cats, _ := a.categories()
+	if !a.categoryExists(uid, t.Category, t.Type) {
+		cats, _ := a.categories(uid)
 		return map[string]any{"error": fmt.Sprintf("unknown category %q for type %q", t.Category, t.Type), "valid": cats}
 	}
 	if t.SourceRef != nil && *t.SourceRef == "" {
@@ -204,8 +204,8 @@ func (a *app) checkTx(ctx context.Context, t *Tx) map[string]any {
 	return nil
 }
 
-func (a *app) getTx(id int64) (Tx, error) {
-	return scanTx(a.db.QueryRow(`SELECT `+txCols+` FROM transactions WHERE id = ?`, id))
+func (a *app) getTx(uid, id int64) (Tx, error) {
+	return scanTx(a.db.QueryRow(`SELECT `+txCols+` FROM transactions WHERE id = ? AND user_id = ?`, id, uid))
 }
 
 // ---------- transactions ----------
@@ -215,8 +215,9 @@ func (a *app) createTx(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &t) {
 		return
 	}
+	uid := userID(r)
 	if t.Source == "email" { // rules win even if the agent forgot to apply them
-		a.applyRule(&t)
+		a.applyRule(uid, &t)
 	}
 	// An email can't tell a move between own accounts from a payment to a person (friend, split bill),
 	// so a transfer without a destination waits in Review instead of silently leaving the books.
@@ -226,10 +227,10 @@ func (a *app) createTx(w http.ResponseWriter, r *http.Request) {
 	if !a.validateTx(w, r, &t) {
 		return
 	}
-	if err := a.insertTx(&t); err != nil {
-		if strings.Contains(err.Error(), "UNIQUE constraint failed: transactions.source_ref") {
+	if err := a.insertTx(uid, &t); err != nil {
+		if strings.Contains(err.Error(), "UNIQUE constraint failed") && strings.Contains(err.Error(), "transactions.source_ref") {
 			var id int64
-			a.db.QueryRow(`SELECT id FROM transactions WHERE source_ref = ?`, *t.SourceRef).Scan(&id)
+			a.db.QueryRow(`SELECT id FROM transactions WHERE user_id = ? AND source_ref = ?`, uid, *t.SourceRef).Scan(&id)
 			writeJSON(w, http.StatusConflict, map[string]any{"error": "duplicate source_ref", "id": id})
 			return
 		}
@@ -237,23 +238,23 @@ func (a *app) createTx(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if t.Source == "email" {
-		a.notify(t)
+		a.notify(uid, t)
 	}
 	writeJSON(w, http.StatusCreated, t) // includes id, plus the computed IDR amount
 }
 
 // insertTx stores a validated t, sets its ID and notifies clients.
-func (a *app) insertTx(t *Tx) error {
+func (a *app) insertTx(uid int64, t *Tx) error {
 	res, err := a.db.Exec(`INSERT INTO transactions
-		(occurred_at, amount, type, category, merchant, account, to_account, note, source, source_ref, confidence, needs_review, currency, orig_amount)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		t.OccurredAt, t.Amount, t.Type, t.Category, t.Merchant, t.Account, t.ToAccount, t.Note, t.Source, t.SourceRef, t.Confidence, t.NeedsReview,
+		(user_id, occurred_at, amount, type, category, merchant, account, to_account, note, source, source_ref, confidence, needs_review, currency, orig_amount)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		uid, t.OccurredAt, t.Amount, t.Type, t.Category, t.Merchant, t.Account, t.ToAccount, t.Note, t.Source, t.SourceRef, t.Confidence, t.NeedsReview,
 		t.Currency, t.OrigAmount)
 	if err != nil {
 		return err
 	}
 	t.ID, _ = res.LastInsertId()
-	a.hub.publish("transaction.created", *t)
+	a.hub.publish(uid, "transaction.created", *t)
 	return nil
 }
 
@@ -264,14 +265,15 @@ func (a *app) listTx(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var rows *sql.Rows
+	uid := userID(r)
 	if q := strings.TrimSpace(r.URL.Query().Get("q")); q != "" { // search all months
 		like := "%" + strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`).Replace(q) + "%"
-		rows, err = a.db.Query(`SELECT `+txCols+` FROM transactions
-			WHERE merchant LIKE ?1 ESCAPE '\' OR note LIKE ?1 ESCAPE '\' OR category LIKE ?1 ESCAPE '\' OR account LIKE ?1 ESCAPE '\'
-			ORDER BY occurred_at DESC, id DESC LIMIT 200`, like)
+		rows, err = a.db.Query(`SELECT `+txCols+` FROM transactions WHERE user_id = ?2 AND
+			(merchant LIKE ?1 ESCAPE '\' OR note LIKE ?1 ESCAPE '\' OR category LIKE ?1 ESCAPE '\' OR account LIKE ?1 ESCAPE '\')
+			ORDER BY occurred_at DESC, id DESC LIMIT 200`, like, uid)
 	} else {
 		rows, err = a.db.Query(`SELECT `+txCols+` FROM transactions
-			WHERE occurred_at >= ? AND occurred_at < ? ORDER BY occurred_at DESC, id DESC`, from, to)
+			WHERE user_id = ? AND occurred_at >= ? AND occurred_at < ? ORDER BY occurred_at DESC, id DESC`, uid, from, to)
 	}
 	if err != nil {
 		a.fail(w, err)
@@ -311,7 +313,8 @@ func (a *app) patchTx(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &p) {
 		return
 	}
-	t, err := a.getTx(id)
+	uid := userID(r)
+	t, err := a.getTx(uid, id)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeErr(w, http.StatusNotFound, "not found")
 		return
@@ -351,13 +354,13 @@ func (a *app) patchTx(w http.ResponseWriter, r *http.Request) {
 	}
 	_, err = a.db.Exec(`UPDATE transactions SET occurred_at = ?, amount = ?, type = ?, category = ?, merchant = ?,
 		account = ?, to_account = ?, note = ?, needs_review = ?, currency = ?, orig_amount = ?,
-		updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?`,
-		t.OccurredAt, t.Amount, t.Type, t.Category, t.Merchant, t.Account, t.ToAccount, t.Note, t.NeedsReview, t.Currency, t.OrigAmount, id)
+		updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ? AND user_id = ?`,
+		t.OccurredAt, t.Amount, t.Type, t.Category, t.Merchant, t.Account, t.ToAccount, t.Note, t.NeedsReview, t.Currency, t.OrigAmount, id, uid)
 	if err != nil {
 		a.fail(w, err)
 		return
 	}
-	a.hub.publish("transaction.updated", t)
+	a.hub.publish(uid, "transaction.updated", t)
 	writeJSON(w, http.StatusOK, t)
 }
 
@@ -366,7 +369,8 @@ func (a *app) deleteTx(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	t, err := a.getTx(id)
+	uid := userID(r)
+	t, err := a.getTx(uid, id)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeErr(w, http.StatusNotFound, "not found")
 		return
@@ -395,7 +399,7 @@ func (a *app) deleteTx(w http.ResponseWriter, r *http.Request) {
 		}
 		rows.Close()
 	}
-	if _, err := tx.Exec(`DELETE FROM transactions WHERE id = ?`, id); err != nil {
+	if _, err := tx.Exec(`DELETE FROM transactions WHERE id = ? AND user_id = ?`, id, uid); err != nil {
 		a.fail(w, err)
 		return
 	}
@@ -411,7 +415,7 @@ func (a *app) deleteTx(w http.ResponseWriter, r *http.Request) {
 	}
 	if t.SourceRef != nil && *t.SourceRef != "" {
 		// otherwise the email cron sees the Message-ID as new again and re-imports it
-		if _, err := tx.Exec(`INSERT OR IGNORE INTO deleted_refs (ref) VALUES (?)`, *t.SourceRef); err != nil {
+		if _, err := tx.Exec(`INSERT OR IGNORE INTO deleted_refs (user_id, ref) VALUES (?, ?)`, uid, *t.SourceRef); err != nil {
 			a.fail(w, err)
 			return
 		}
@@ -421,11 +425,11 @@ func (a *app) deleteTx(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, sid := range siblings { // their split_of / source_ref may have changed
-		if x, err := a.getTx(sid); err == nil {
-			a.hub.publish("transaction.updated", x)
+		if x, err := a.getTx(uid, sid); err == nil {
+			a.hub.publish(uid, "transaction.updated", x)
 		}
 	}
-	a.hub.publish("transaction.deleted", t)
+	a.hub.publish(uid, "transaction.deleted", t)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -447,7 +451,8 @@ func (a *app) splitTx(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &b) {
 		return
 	}
-	t, err := a.getTx(id)
+	uid := userID(r)
+	t, err := a.getTx(uid, id)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeErr(w, http.StatusNotFound, "not found")
 		return
@@ -457,7 +462,7 @@ func (a *app) splitTx(w http.ResponseWriter, r *http.Request) {
 	}
 	head := t
 	if t.SplitOf != nil && *t.SplitOf != t.ID {
-		if head, err = a.getTx(*t.SplitOf); err != nil {
+		if head, err = a.getTx(uid, *t.SplitOf); err != nil {
 			a.fail(w, err)
 			return
 		}
@@ -473,7 +478,7 @@ func (a *app) splitTx(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusBadRequest, "every part needs a positive amount")
 			return
 		}
-		if !a.categoryExists(p.Category, head.Type) {
+		if !a.categoryExists(uid, p.Category, head.Type) {
 			writeErr(w, http.StatusBadRequest, fmt.Sprintf("unknown category %q for type %q", p.Category, head.Type))
 			return
 		}
@@ -537,9 +542,9 @@ func (a *app) splitTx(w http.ResponseWriter, r *http.Request) {
 			x.SourceRef = nil // unique; the original row keeps the email's ref
 			var res sql.Result
 			res, err = tx.Exec(`INSERT INTO transactions
-				(occurred_at, amount, type, category, merchant, account, to_account, note, source, source_ref, confidence, needs_review, currency, orig_amount, split_of)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, NULL, ?)`,
-				x.OccurredAt, x.Amount, x.Type, x.Category, x.Merchant, x.Account, x.ToAccount, x.Note, x.Source, x.Confidence, x.NeedsReview, x.Currency, x.SplitOf)
+				(user_id, occurred_at, amount, type, category, merchant, account, to_account, note, source, source_ref, confidence, needs_review, currency, orig_amount, split_of)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, NULL, ?)`,
+				uid, x.OccurredAt, x.Amount, x.Type, x.Category, x.Merchant, x.Account, x.ToAccount, x.Note, x.Source, x.Confidence, x.NeedsReview, x.Currency, x.SplitOf)
 			if err == nil {
 				x.ID, _ = res.LastInsertId()
 			}
@@ -555,11 +560,11 @@ func (a *app) splitTx(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, rid := range removed {
-		a.hub.publish("transaction.deleted", Tx{ID: rid})
+		a.hub.publish(uid, "transaction.deleted", Tx{ID: rid})
 	}
-	a.hub.publish("transaction.updated", out[0])
+	a.hub.publish(uid, "transaction.updated", out[0])
 	for _, x := range out[1:] {
-		a.hub.publish("transaction.created", x)
+		a.hub.publish(uid, "transaction.created", x)
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -599,9 +604,11 @@ func (a *app) checkRefs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	unknown := []string{}
+	uid := userID(r)
 	for _, ref := range body.Refs {
 		var n int
-		if err := a.db.QueryRow(`SELECT (SELECT COUNT(*) FROM transactions WHERE source_ref = ?1) + (SELECT COUNT(*) FROM deleted_refs WHERE ref = ?1)`, ref).Scan(&n); err != nil {
+		if err := a.db.QueryRow(`SELECT (SELECT COUNT(*) FROM transactions WHERE user_id = ?2 AND source_ref = ?1)
+			+ (SELECT COUNT(*) FROM deleted_refs WHERE user_id = ?2 AND ref = ?1)`, ref, uid).Scan(&n); err != nil {
 			a.fail(w, err)
 			return
 		}
@@ -619,7 +626,7 @@ func (a *app) summary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rows, err := a.db.Query(`SELECT type, category, SUM(amount), COUNT(*) FROM transactions
-		WHERE occurred_at >= ? AND occurred_at < ? GROUP BY type, category ORDER BY SUM(amount) DESC`, from, to)
+		WHERE user_id = ? AND occurred_at >= ? AND occurred_at < ? GROUP BY type, category ORDER BY SUM(amount) DESC`, userID(r), from, to)
 	if err != nil {
 		a.fail(w, err)
 		return
@@ -652,8 +659,8 @@ func (a *app) summary(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (a *app) listCategories(w http.ResponseWriter, _ *http.Request) {
-	cats, err := a.categories()
+func (a *app) listCategories(w http.ResponseWriter, r *http.Request) {
+	cats, err := a.categories(userID(r))
 	if err != nil {
 		a.fail(w, err)
 		return
@@ -699,9 +706,10 @@ func (a *app) createCategory(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, msg)
 		return
 	}
-	// the table is unique on (name, type) but case-sensitive: "makan" next to "Makan" would only confuse
+	// the table is unique on (user_id, name, type) but case-sensitive: "makan" next to "Makan" would only confuse
+	uid := userID(r)
 	var n int
-	if err := a.db.QueryRow(`SELECT COUNT(*) FROM categories WHERE lower(name) = lower(?) AND type = ?`, name, in.Type).Scan(&n); err != nil {
+	if err := a.db.QueryRow(`SELECT COUNT(*) FROM categories WHERE user_id = ? AND lower(name) = lower(?) AND type = ?`, uid, name, in.Type).Scan(&n); err != nil {
 		a.fail(w, err)
 		return
 	}
@@ -709,7 +717,7 @@ func (a *app) createCategory(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusConflict, "category already exists")
 		return
 	}
-	res, err := a.db.Exec(`INSERT INTO categories (name, type, custom) VALUES (?, ?, 1)`, name, in.Type)
+	res, err := a.db.Exec(`INSERT INTO categories (user_id, name, type, custom) VALUES (?, ?, ?, 1)`, uid, name, in.Type)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE constraint failed") { // lost a race with the same request
 			writeErr(w, http.StatusConflict, "category already exists")
@@ -719,14 +727,14 @@ func (a *app) createCategory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id, _ := res.LastInsertId()
-	a.hub.publish("categories.changed", map[string]any{})
+	a.hub.publish(uid, "categories.changed", map[string]any{})
 	writeJSON(w, http.StatusCreated, Category{ID: id, Name: name, Type: in.Type, Custom: true})
 }
 
 // customCategory loads a user-created category, writing 404/403 when it is missing or built in.
-func (a *app) customCategory(w http.ResponseWriter, id int64, verb string) (Category, bool) {
+func (a *app) customCategory(w http.ResponseWriter, uid, id int64, verb string) (Category, bool) {
 	var c Category
-	err := a.db.QueryRow(`SELECT id, name, type, custom FROM categories WHERE id = ?`, id).Scan(&c.ID, &c.Name, &c.Type, &c.Custom)
+	err := a.db.QueryRow(`SELECT id, name, type, custom FROM categories WHERE id = ? AND user_id = ?`, id, uid).Scan(&c.ID, &c.Name, &c.Type, &c.Custom)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 		writeErr(w, http.StatusNotFound, "not found")
@@ -754,7 +762,8 @@ func (a *app) patchCategory(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &in) {
 		return
 	}
-	cur, ok := a.customCategory(w, id, "renamed")
+	uid := userID(r)
+	cur, ok := a.customCategory(w, uid, id, "renamed")
 	if !ok {
 		return
 	}
@@ -772,7 +781,7 @@ func (a *app) patchCategory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var other int64
-	if err := a.db.QueryRow(`SELECT id FROM categories WHERE lower(name) = lower(?) AND type = ? AND id != ?`, name, cur.Type, id).Scan(&other); err == nil {
+	if err := a.db.QueryRow(`SELECT id FROM categories WHERE user_id = ? AND lower(name) = lower(?) AND type = ? AND id != ?`, uid, name, cur.Type, id).Scan(&other); err == nil {
 		writeJSON(w, http.StatusConflict, map[string]any{"error": "category already exists", "id": other})
 		return
 	} else if !errors.Is(err, sql.ErrNoRows) {
@@ -792,13 +801,13 @@ func (a *app) patchCategory(w http.ResponseWriter, r *http.Request) {
 	}{
 		{`PRAGMA defer_foreign_keys = ON`, nil}, // recurring points at the old name until its own UPDATE below: check at commit
 		{`UPDATE categories SET name = ? WHERE id = ?`, []any{name, id}},
-		{`UPDATE recurring SET category = ? WHERE category = ? AND type = ?`, []any{name, cur.Name, cur.Type}},
+		{`UPDATE recurring SET category = ? WHERE user_id = ? AND category = ? AND type = ?`, []any{name, uid, cur.Name, cur.Type}},
 	}
 	if cur.Type == "out" { // budgets only exist for expense categories
 		steps = append(steps, struct {
 			q    string
 			args []any
-		}{`UPDATE budgets SET category = ? WHERE category = ?`, []any{name, cur.Name}})
+		}{`UPDATE budgets SET category = ? WHERE user_id = ? AND category = ?`, []any{name, uid, cur.Name}})
 	}
 	for _, st := range steps {
 		if _, err := tx.Exec(st.q, st.args...); err != nil {
@@ -810,7 +819,7 @@ func (a *app) patchCategory(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, err)
 		return
 	}
-	a.hub.publish("categories.changed", map[string]any{})
+	a.hub.publish(uid, "categories.changed", map[string]any{})
 	cur.Name = name
 	writeJSON(w, http.StatusOK, cur)
 }
@@ -823,7 +832,8 @@ func (a *app) deleteCategory(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	cur, ok := a.customCategory(w, id, "deleted")
+	uid := userID(r)
+	cur, ok := a.customCategory(w, uid, id, "deleted")
 	if !ok {
 		return
 	}
@@ -839,9 +849,9 @@ func (a *app) deleteCategory(w http.ResponseWriter, r *http.Request) {
 		n   *int64
 		arg []any
 	}{
-		{`UPDATE transactions SET category = 'Lainnya' WHERE category = ? AND type = ?`, &moved, []any{cur.Name, cur.Type}},
-		{`UPDATE recurring SET category = 'Lainnya' WHERE category = ? AND type = ?`, nil, []any{cur.Name, cur.Type}},
-		{`DELETE FROM rules WHERE category = ? AND type = ?`, &rulesDeleted, []any{cur.Name, cur.Type}},
+		{`UPDATE transactions SET category = 'Lainnya' WHERE user_id = ? AND category = ? AND type = ?`, &moved, []any{uid, cur.Name, cur.Type}},
+		{`UPDATE recurring SET category = 'Lainnya' WHERE user_id = ? AND category = ? AND type = ?`, nil, []any{uid, cur.Name, cur.Type}},
+		{`DELETE FROM rules WHERE user_id = ? AND category = ? AND type = ?`, &rulesDeleted, []any{uid, cur.Name, cur.Type}},
 		{`DELETE FROM categories WHERE id = ?`, nil, []any{id}},
 	}
 	if cur.Type == "out" { // budgets only exist for expense categories
@@ -849,7 +859,7 @@ func (a *app) deleteCategory(w http.ResponseWriter, r *http.Request) {
 			q   string
 			n   *int64
 			arg []any
-		}{`DELETE FROM budgets WHERE category = ?`, nil, []any{cur.Name}})
+		}{`DELETE FROM budgets WHERE user_id = ? AND category = ?`, nil, []any{uid, cur.Name}})
 	}
 	for _, st := range steps {
 		res, err := tx.Exec(st.q, st.arg...)
@@ -865,14 +875,14 @@ func (a *app) deleteCategory(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, err)
 		return
 	}
-	a.hub.publish("categories.changed", map[string]any{})
+	a.hub.publish(uid, "categories.changed", map[string]any{})
 	writeJSON(w, http.StatusOK, map[string]any{"moved_to": "Lainnya", "transactions": moved, "rules_deleted": rulesDeleted})
 }
 
 // ---------- rules ----------
 
-func (a *app) listRules(w http.ResponseWriter, _ *http.Request) {
-	rows, err := a.db.Query(`SELECT id, pattern, match, type, category FROM rules ORDER BY id`)
+func (a *app) listRules(w http.ResponseWriter, r *http.Request) {
+	rows, err := a.db.Query(`SELECT id, pattern, match, type, category FROM rules WHERE user_id = ? ORDER BY id`, userID(r))
 	if err != nil {
 		a.fail(w, err)
 		return
@@ -896,6 +906,7 @@ func (a *app) createRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ru.Pattern = strings.TrimSpace(ru.Pattern)
+	uid := userID(r)
 	if ru.Match == "" {
 		ru.Match = "contains"
 	}
@@ -906,14 +917,14 @@ func (a *app) createRule(w http.ResponseWriter, r *http.Request) {
 	case ru.Match != "contains":
 		writeErr(w, http.StatusBadRequest, "match must be contains")
 		return
-	case !validType(ru.Type) || !a.categoryExists(ru.Category, ru.Type):
+	case !validType(ru.Type) || !a.categoryExists(uid, ru.Category, ru.Type):
 		writeErr(w, http.StatusBadRequest, "unknown type/category, see /api/categories")
 		return
 	}
 	// one rule per pattern: a newer correction replaces the old one
-	a.db.Exec(`DELETE FROM rules WHERE lower(pattern) = lower(?)`, ru.Pattern)
-	res, err := a.db.Exec(`INSERT INTO rules (pattern, match, type, category) VALUES (?, ?, ?, ?)`,
-		ru.Pattern, ru.Match, ru.Type, ru.Category)
+	a.db.Exec(`DELETE FROM rules WHERE user_id = ? AND lower(pattern) = lower(?)`, uid, ru.Pattern)
+	res, err := a.db.Exec(`INSERT INTO rules (user_id, pattern, match, type, category) VALUES (?, ?, ?, ?, ?)`,
+		uid, ru.Pattern, ru.Match, ru.Type, ru.Category)
 	if err != nil {
 		a.fail(w, err)
 		return
@@ -937,7 +948,8 @@ func (a *app) patchRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var ru Rule
-	err := a.db.QueryRow(`SELECT id, pattern, match, type, category FROM rules WHERE id = ?`, id).
+	uid := userID(r)
+	err := a.db.QueryRow(`SELECT id, pattern, match, type, category FROM rules WHERE id = ? AND user_id = ?`, id, uid).
 		Scan(&ru.ID, &ru.Pattern, &ru.Match, &ru.Type, &ru.Category)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeErr(w, http.StatusNotFound, "not found")
@@ -959,17 +971,17 @@ func (a *app) patchRule(w http.ResponseWriter, r *http.Request) {
 	case ru.Pattern == "":
 		writeErr(w, http.StatusBadRequest, "pattern is required")
 		return
-	case !validType(ru.Type) || !a.categoryExists(ru.Category, ru.Type):
+	case !validType(ru.Type) || !a.categoryExists(uid, ru.Category, ru.Type):
 		writeErr(w, http.StatusBadRequest, "unknown type/category, see /api/categories")
 		return
 	}
 	// one rule per pattern: renaming onto another rule's pattern is a conflict, not a silent overwrite
 	var other int64
-	if err := a.db.QueryRow(`SELECT id FROM rules WHERE lower(pattern) = lower(?) AND id != ?`, ru.Pattern, id).Scan(&other); err == nil {
+	if err := a.db.QueryRow(`SELECT id FROM rules WHERE user_id = ? AND lower(pattern) = lower(?) AND id != ?`, uid, ru.Pattern, id).Scan(&other); err == nil {
 		writeJSON(w, http.StatusConflict, map[string]any{"error": "another rule already uses this pattern", "id": other})
 		return
 	}
-	if _, err := a.db.Exec(`UPDATE rules SET pattern = ?, type = ?, category = ? WHERE id = ?`, ru.Pattern, ru.Type, ru.Category, id); err != nil {
+	if _, err := a.db.Exec(`UPDATE rules SET pattern = ?, type = ?, category = ? WHERE id = ? AND user_id = ?`, ru.Pattern, ru.Type, ru.Category, id, uid); err != nil {
 		a.fail(w, err)
 		return
 	}
@@ -981,7 +993,7 @@ func (a *app) deleteRule(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	res, err := a.db.Exec(`DELETE FROM rules WHERE id = ?`, id)
+	res, err := a.db.Exec(`DELETE FROM rules WHERE id = ? AND user_id = ?`, id, userID(r))
 	if err != nil {
 		a.fail(w, err)
 		return

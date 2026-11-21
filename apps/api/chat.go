@@ -75,12 +75,26 @@ func (a *app) chatOn(w http.ResponseWriter) bool {
 	return true
 }
 
+// chatOwner gates the free chat to the first account: Hermes reads Kantong through the skills'
+// FINANCE_API_TOKEN, which is the first account's, so anyone else would be answered with its data.
+// ponytail: owner only; open it up once Hermes can act with the caller's token.
+func (a *app) chatOwner(w http.ResponseWriter, r *http.Request) bool {
+	if !a.chatOn(w) {
+		return false
+	}
+	if userID(r) != a.ownerID {
+		writeErr(w, http.StatusForbidden, "chat is only available to the first account")
+		return false
+	}
+	return true
+}
+
 func (a *app) getChat(w http.ResponseWriter, r *http.Request) {
-	if a.cfg.hermesURL == "" {
+	if a.cfg.hermesURL == "" || userID(r) != a.ownerID {
 		writeJSON(w, http.StatusOK, map[string]any{"enabled": false})
 		return
 	}
-	rows, err := a.db.Query(`SELECT id, title, updated_at FROM chat_sessions ORDER BY updated_at DESC, id DESC`)
+	rows, err := a.db.Query(`SELECT id, title, updated_at FROM chat_sessions WHERE user_id = ? ORDER BY updated_at DESC, id DESC`, userID(r))
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
@@ -100,10 +114,10 @@ func (a *app) getChat(w http.ResponseWriter, r *http.Request) {
 
 func (a *app) getChatSession(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(w, r)
-	if !ok || !a.chatOn(w) {
+	if !ok || !a.chatOwner(w, r) {
 		return
 	}
-	msgs, err := a.chatMessages(id, chatHistory*2)
+	msgs, err := a.chatMessages(userID(r), id, chatHistory*2)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
@@ -113,7 +127,7 @@ func (a *app) getChatSession(w http.ResponseWriter, r *http.Request) {
 
 func (a *app) deleteChatSession(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(w, r)
-	if !ok || !a.chatOn(w) {
+	if !ok || !a.chatOwner(w, r) {
 		return
 	}
 	tx, err := a.db.Begin()
@@ -122,8 +136,9 @@ func (a *app) deleteChatSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback()
-	tx.Exec(`DELETE FROM chat_messages WHERE session_id = ?`, id)
-	res, err := tx.Exec(`DELETE FROM chat_sessions WHERE id = ?`, id)
+	uid := userID(r)
+	tx.Exec(`DELETE FROM chat_messages WHERE session_id = (SELECT id FROM chat_sessions WHERE id = ? AND user_id = ?)`, id, uid)
+	res, err := tx.Exec(`DELETE FROM chat_sessions WHERE id = ? AND user_id = ?`, id, uid)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "delete failed")
 		return
@@ -139,8 +154,9 @@ func (a *app) deleteChatSession(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (a *app) chatMessages(session int64, limit int) ([]chatMsg, error) {
-	rows, err := a.db.Query(`SELECT id, role, text, model, created_at FROM (SELECT * FROM chat_messages WHERE session_id = ? ORDER BY id DESC LIMIT ?) ORDER BY id`, session, limit)
+func (a *app) chatMessages(uid, session int64, limit int) ([]chatMsg, error) {
+	rows, err := a.db.Query(`SELECT id, role, text, model, created_at FROM (SELECT * FROM chat_messages
+		WHERE session_id = (SELECT id FROM chat_sessions WHERE id = ? AND user_id = ?) ORDER BY id DESC LIMIT ?) ORDER BY id`, session, uid, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -157,9 +173,10 @@ func (a *app) chatMessages(session int64, limit int) ([]chatMsg, error) {
 }
 
 func (a *app) postChat(w http.ResponseWriter, r *http.Request) {
-	if !a.chatOn(w) {
+	if !a.chatOwner(w, r) {
 		return
 	}
+	uid := userID(r)
 	var in struct {
 		Text    string `json:"text"`
 		Model   string `json:"model"`      // one of CHAT_MODELS; empty = first one, or Hermes' own default
@@ -186,11 +203,11 @@ func (a *app) postChat(w http.ResponseWriter, r *http.Request) {
 	history := []chatMsg{}
 	if in.Session != 0 {
 		var n int
-		if a.db.QueryRow(`SELECT COUNT(*) FROM chat_sessions WHERE id = ?`, in.Session).Scan(&n); n == 0 {
+		if a.db.QueryRow(`SELECT COUNT(*) FROM chat_sessions WHERE id = ? AND user_id = ?`, in.Session, uid).Scan(&n); n == 0 {
 			writeErr(w, http.StatusNotFound, "chat session not found")
 			return
 		}
-		history, err = a.chatMessages(in.Session, chatHistory)
+		history, err = a.chatMessages(uid, in.Session, chatHistory)
 	}
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
@@ -215,9 +232,9 @@ func (a *app) postChat(w http.ResponseWriter, r *http.Request) {
 		if len(title) > 60 {
 			title = append(title[:57], '…')
 		}
-		err = tx.QueryRow(`INSERT INTO chat_sessions (title) VALUES (?) RETURNING id, title, updated_at`, string(title)).Scan(&sess.ID, &sess.Title, &sess.UpdatedAt)
+		err = tx.QueryRow(`INSERT INTO chat_sessions (user_id, title) VALUES (?, ?) RETURNING id, title, updated_at`, uid, string(title)).Scan(&sess.ID, &sess.Title, &sess.UpdatedAt)
 	} else {
-		err = tx.QueryRow(`UPDATE chat_sessions SET updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ? RETURNING id, title, updated_at`, in.Session).Scan(&sess.ID, &sess.Title, &sess.UpdatedAt)
+		err = tx.QueryRow(`UPDATE chat_sessions SET updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ? AND user_id = ? RETURNING id, title, updated_at`, in.Session, uid).Scan(&sess.ID, &sess.Title, &sess.UpdatedAt)
 	}
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
