@@ -51,7 +51,7 @@
     ['/analytics', 'Analitik', 'chart'],
     ['/assets', 'Aset', 'wallet'],
   ]
-  const more = $derived([...(s.chat ? [['/chat', 'Asisten', 'chat']] : []), ['/review', 'Review', 'inbox'], ['/rules', 'Aturan kategori', 'tag'], ['/devices', 'Perangkat', 'laptop']])
+  const more = $derived([...(s.chat ? [['/chat', 'Asisten', 'chat']] : []), ['/review', 'Review', 'inbox'], ['/rules', 'Aturan kategori', 'tag'], ['/devices', 'Akun & perangkat', 'laptop']])
 </script>
 
 {#if !s.authed}
