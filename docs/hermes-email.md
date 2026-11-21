@@ -105,6 +105,7 @@ hermes cron list
 
 Setiap 10 menit, `fetch.py` jalan duluan tanpa LLM. Hermes cuma dibangunkan kalau ada email yang `Message-ID`-nya belum tercatat di Kantong, jadi run tanpa email baru tidak makan token.
 
+
 ## 7. Cek end-to-end
 
 1. Lakukan transaksi kecil, misalnya top-up e-wallet Rp10.000.
@@ -112,6 +113,35 @@ Setiap 10 menit, `fetch.py` jalan duluan tanpa LLM. Hermes cuma dibangunkan kala
 3. Kalau kategorinya salah, tap kartu kuning **"… transaksi perlu direview"** di Beranda PWA (di desktop: menu **Review** di sidebar), lalu tap kategori yang benar dengan opsi "Ingat pilihan" menyala. Email berikutnya dari merchant itu langsung masuk dengan kategori tersebut.
 
 Mau mengisi aset dari screenshot portofolio juga? Lihat [hermes-assets.md](hermes-assets.md).
+
+## 8. Mailbox untuk akun lain (opsional)
+
+Kalau Kantong dipakai lebih dari satu orang, email bank tiap orang bisa masuk ke akunnya sendiri. Satu Hermes membaca beberapa mailbox, satu cron job per mailbox.
+
+1. Bikin akun dan token-nya di server Kantong:
+   ```sh
+   docker compose exec money /money-manager adduser budi   # catat password dan api token
+   ```
+2. Tambahkan config mailbox Budi ke `~/.hermes/.env`. Kuncinya sama, cuma diberi akhiran `_BUDI`:
+   ```sh
+   IMAP_HOST_BUDI=imap.gmail.com
+   IMAP_USER_BUDI=budi@gmail.com
+   IMAP_PASSWORD_BUDI=app-password-budi
+   FINANCE_API_TOKEN_BUDI=api-token-dari-langkah-1
+   FINANCE_FWD_FROM_BUDI=                 # opsional
+   FINANCE_OWNER_NAME_BUDI=NAMA LENGKAP BUDI
+   ```
+   Tidak ada fallback: kalau `FINANCE_API_TOKEN_BUDI` kosong, mailbox Budi tidak dibaca sama sekali, jadi emailnya tidak mungkin masuk ke akunmu.
+3. Pasang wrapper dengan nama akun, lalu jadwalkan:
+   ```sh
+   cp hermes/finance-email-fetch.py ~/.hermes/scripts/finance-email-fetch-budi.py
+   hermes cron create --name finance-email-budi --script finance-email-fetch-budi.py --skill finance-email --deliver telegram 10m
+   ```
+4. Tes: `python3 ~/.hermes/skills/finance-email/scripts/fetch.py budi`. Log-nya ditandai `[budi]`.
+
+Tiap transaksi dikirim ke akun pemilik mailbox-nya berdasarkan `Message-ID` yang dicatat `fetch.py`, bukan berdasarkan tebakan Hermes. Notif Telegram untuk Budi dikirim lewat bot yang Budi hubungkan sendiri di halaman **Akun & perangkat**.
+
+Yang tetap hanya untuk akun pertama: foto struk, screenshot portofolio, dan chat AI lewat Hermes di Telegram, karena Hermes punya satu memori dan memakai `FINANCE_API_TOKEN` akun pertama.
 
 ## Troubleshooting
 
