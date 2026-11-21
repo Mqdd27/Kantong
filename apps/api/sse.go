@@ -10,15 +10,20 @@ import (
 
 type hub struct {
 	mu      sync.Mutex
-	clients map[chan []byte]string // stream -> session id ("" for API_TOKEN)
+	clients map[chan []byte]client
 }
 
-func newHub() *hub { return &hub{clients: map[chan []byte]string{}} }
+type client struct {
+	sid string // "" for API tokens
+	uid int64  // events reach only streams of the account they belong to
+}
 
-func (h *hub) subscribe(sid string) chan []byte {
+func newHub() *hub { return &hub{clients: map[chan []byte]client{}} }
+
+func (h *hub) subscribe(sid string, uid int64) chan []byte {
 	c := make(chan []byte, 16)
 	h.mu.Lock()
-	h.clients[c] = sid
+	h.clients[c] = client{sid, uid}
 	h.mu.Unlock()
 	return c
 }
@@ -27,8 +32,8 @@ func (h *hub) subscribe(sid string) chan []byte {
 func (h *hub) kick(sid string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	for c, s := range h.clients {
-		if s == sid {
+	for c, cl := range h.clients {
+		if cl.sid == sid {
 			delete(h.clients, c)
 			close(c)
 		}
@@ -44,12 +49,15 @@ func (h *hub) unsubscribe(c chan []byte) {
 	}
 }
 
-func (h *hub) publish(event string, v any) {
+func (h *hub) publish(uid int64, event string, v any) {
 	data, _ := json.Marshal(v)
 	msg := fmt.Appendf(nil, "event: %s\ndata: %s\n\n", event, data)
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	for c := range h.clients {
+	for c, cl := range h.clients {
+		if cl.uid != uid {
+			continue
+		}
 		select {
 		case c <- msg:
 		default: // client too slow: drop it; it reconnects and refetches
@@ -64,7 +72,7 @@ func (a *app) events(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("X-Accel-Buffering", "no")
-	c := a.hub.subscribe(sessionID(r))
+	c := a.hub.subscribe(sessionID(r), userID(r))
 	defer a.hub.unsubscribe(c)
 
 	w.Write([]byte(": connected\n\n"))

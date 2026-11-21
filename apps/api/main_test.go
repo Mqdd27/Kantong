@@ -641,7 +641,7 @@ func TestDebtDueStatus(t *testing.T) {
 	five, last := 5, 31
 	check := func(name string, x Asset, now, wantDate string, wantOver bool) {
 		t.Helper()
-		if err := a.dueStatus(context.Background(), &x, day(now)); err != nil {
+		if err := a.dueStatus(context.Background(), a.ownerID, &x, day(now)); err != nil {
 			t.Fatal(err)
 		}
 		if x.DueDate != wantDate || x.Overdue != wantOver {
@@ -650,7 +650,7 @@ func TestDebtDueStatus(t *testing.T) {
 	}
 	pay := func(date string) {
 		t.Helper()
-		if err := a.insertTx(&Tx{OccurredAt: date + "T09:00:00+07:00", Amount: 100000, Type: "transfer", Category: "Transfer",
+		if err := a.insertTx(a.ownerID, &Tx{OccurredAt: date + "T09:00:00+07:00", Amount: 100000, Type: "transfer", Category: "Transfer",
 			Account: "Jago", ToAccount: "SPayLater", Source: "manual", Currency: "IDR"}); err != nil {
 			t.Fatal(err)
 		}

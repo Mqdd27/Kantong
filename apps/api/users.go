@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -58,6 +59,7 @@ func validUsername(name string) error {
 	return nil
 }
 
+// addUser creates an account with its own copy of the built-in categories.
 func addUser(db *sql.DB, name, pw string) (int64, error) {
 	if err := validUsername(name); err != nil {
 		return 0, err
@@ -66,11 +68,21 @@ func addUser(db *sql.DB, name, pw string) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	res, err := db.Exec(`INSERT INTO users (username, pass_hash) VALUES (?, ?)`, name, h)
+	tx, err := db.Begin()
 	if err != nil {
 		return 0, err
 	}
-	return res.LastInsertId()
+	defer tx.Rollback()
+	var id int64
+	if err := tx.QueryRow(`INSERT INTO users (username, pass_hash) VALUES (?, ?) RETURNING id`, name, h).Scan(&id); err != nil {
+		return 0, err
+	}
+	// the first account's built-ins are the template; its own in/out choices (in_budget) come along
+	if _, err := tx.Exec(`INSERT INTO categories (user_id, name, type, in_budget)
+		SELECT ?, name, type, in_budget FROM categories WHERE custom = 0 AND user_id = (SELECT MIN(id) FROM users)`, id); err != nil {
+		return 0, err
+	}
+	return id, tx.Commit()
 }
 
 // setPassword replaces a user's password and signs out all their devices.
@@ -90,35 +102,72 @@ func setPassword(db *sql.DB, name, pw string) error {
 	return err
 }
 
-// bootstrapUsers creates the first account from APP_PASSWORD on an install without users, hands it
-// the sessions from before accounts existed, and returns its id: API_TOKEN calls act as this user.
+func tokenHash(tok string) string {
+	h := sha256.Sum256([]byte(tok))
+	return b64.EncodeToString(h[:])
+}
+
+// newToken issues an API token for a user and returns it; only its hash is stored.
+// Tokens are random, so a plain SHA-256 (not a slow password hash) is enough.
+func newToken(db *sql.DB, name string) (string, error) {
+	var id int64
+	if err := db.QueryRow(`SELECT id FROM users WHERE username = ?`, name).Scan(&id); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", fmt.Errorf("no user %q", name)
+		}
+		return "", err
+	}
+	tok := "kt_" + rand.Text()
+	_, err := db.Exec(`INSERT INTO api_tokens (user_id, hash) VALUES (?, ?)`, id, tokenHash(tok))
+	return tok, err
+}
+
+// tokenUser returns the account behind an API token from api_tokens, or 0.
+func (a *app) tokenUser(tok string) int64 {
+	var uid int64
+	a.db.QueryRow(`SELECT user_id FROM api_tokens WHERE hash = ?`, tokenHash(tok)).Scan(&uid)
+	return uid
+}
+
+// bootstrapUsers claims the first account (created unclaimed by a migration, owning the data from
+// before accounts existed) with APP_USER/APP_PASSWORD, hands it the sessions from before accounts
+// existed, and returns its id: API_TOKEN calls act as this user.
 func bootstrapUsers(db *sql.DB, username, password string) (int64, error) {
-	var owner sql.NullInt64
-	db.QueryRow(`SELECT MIN(id) FROM users`).Scan(&owner)
+	var owner int64
+	var hash string
+	if err := db.QueryRow(`SELECT id, pass_hash FROM users ORDER BY id LIMIT 1`).Scan(&owner, &hash); err != nil {
+		return 0, err
+	}
 	switch {
-	case !owner.Valid && password == "":
-		return 0, errors.New("no users yet: set APP_PASSWORD (and APP_USER) for the first account, or run `adduser`")
-	case !owner.Valid:
+	case hash == "" && password == "":
+		return 0, errors.New("first account not set up: set APP_USER and APP_PASSWORD in .env (or run `passwd owner`)")
+	case hash == "":
 		if username == "" {
 			username = "owner"
 		}
-		id, err := addUser(db, username, password)
-		if err != nil {
+		if err := validUsername(username); err != nil {
+			return 0, fmt.Errorf("APP_USER: %w", err)
+		}
+		if hash, err := hashPassword(password); err != nil {
+			return 0, err
+		} else if _, err := db.Exec(`UPDATE users SET username = ?, pass_hash = ? WHERE id = ?`, username, hash, owner); err != nil {
 			return 0, fmt.Errorf("first user: %w", err)
 		}
-		owner.Int64 = id
 		slog.Info("created first user from APP_PASSWORD; remove APP_PASSWORD from .env", "username", username)
 	case password != "":
 		slog.Warn("APP_PASSWORD is ignored now that users exist; remove it from .env")
 	}
-	_, err := db.Exec(`UPDATE sessions SET user_id = ? WHERE user_id IS NULL`, owner.Int64)
-	return owner.Int64, err
+	_, err := db.Exec(`UPDATE sessions SET user_id = ? WHERE user_id IS NULL`, owner)
+	return owner, err
 }
 
-// cli runs `adduser <name>` / `passwd <name>` against DB_PATH and prints a generated password.
+// cli runs account commands against DB_PATH; secrets are printed once and only their hashes stored.
 func cli(args []string) int {
-	if len(args) != 2 || (args[0] != "adduser" && args[0] != "passwd") {
-		fmt.Fprintln(os.Stderr, "usage: money-manager adduser|passwd <username>")
+	if len(args) != 2 || !slices.Contains([]string{"adduser", "passwd", "token"}, args[0]) {
+		fmt.Fprintln(os.Stderr, `usage: money-manager <command> <username>
+  adduser  create an account; prints its password and an API token
+  passwd   set a new random password; signs the account out everywhere
+  token    issue another API token (for Hermes or scripts)`)
 		return 2
 	}
 	db, err := openDB(env("DB_PATH", "/data/money.db"))
@@ -127,17 +176,30 @@ func cli(args []string) int {
 		return 1
 	}
 	defer db.Close()
-	pw := rand.Text()
-	if args[0] == "adduser" {
-		_, err = addUser(db, args[1], pw)
-	} else {
-		err = setPassword(db, args[1], pw)
+	cmd, name := args[0], args[1]
+	pw, tok := rand.Text(), ""
+	switch cmd {
+	case "adduser":
+		if _, err = addUser(db, name, pw); err == nil {
+			tok, err = newToken(db, name)
+		}
+	case "passwd":
+		err = setPassword(db, name, pw)
+	case "token":
+		pw = ""
+		tok, err = newToken(db, name)
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	fmt.Printf("username: %s\npassword: %s\n", args[1], pw)
+	fmt.Printf("username:  %s\n", name)
+	if pw != "" {
+		fmt.Printf("password:  %s\n", pw)
+	}
+	if tok != "" {
+		fmt.Printf("api token: %s\n", tok)
+	}
 	return 0
 }
 
@@ -184,4 +246,20 @@ func (l *limiter) reset(k string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	delete(l.m, k)
+}
+
+// userIDs lists every account, for background work that runs per account.
+func (a *app) userIDs() []int64 {
+	rows, err := a.db.Query(`SELECT id FROM users ORDER BY id`)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var out []int64
+	for rows.Next() {
+		var id int64
+		rows.Scan(&id)
+		out = append(out, id)
+	}
+	return out
 }

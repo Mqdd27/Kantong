@@ -24,7 +24,7 @@ type uidKey struct{}
 // sessionID is the id of the cookie session making the request; "" for Bearer API_TOKEN calls.
 func sessionID(r *http.Request) string { s, _ := r.Context().Value(sidKey{}).(string); return s }
 
-// userID is the account making the request; API_TOKEN calls act as the first user.
+// userID is the account making the request; the .env API_TOKEN acts as the first user.
 func userID(r *http.Request) int64 { u, _ := r.Context().Value(uidKey{}).(int64); return u }
 
 // secretEq compares hashes so neither content nor length leaks through timing.
@@ -72,9 +72,15 @@ func clientIP(r *http.Request) string {
 
 func (a *app) auth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if tok, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok && secretEq(tok, a.cfg.apiToken) {
-			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), uidKey{}, a.ownerID)))
-			return
+		if tok, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok {
+			uid := a.tokenUser(tok)
+			if secretEq(tok, a.cfg.apiToken) { // the .env token predates accounts: it is the first user's
+				uid = a.ownerID
+			}
+			if uid != 0 {
+				next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), uidKey{}, uid)))
+				return
+			}
 		}
 		if id, uid := a.session(r); id != "" {
 			ctx := context.WithValue(context.WithValue(r.Context(), sidKey{}, id), uidKey{}, uid)
