@@ -14,7 +14,9 @@ Runs from cron every 10 min. Parsing rules live in `parsing-rules.md` (same dir)
 
 ## Config (never write secrets into this skill)
 From `~/.hermes/.env`: `IMAP_HOST`, `IMAP_USER`, `IMAP_PASSWORD`, `FINANCE_API_URL`, `FINANCE_API_TOKEN` (sent as `Authorization: Bearer`), `TELEGRAM_HOME_CHANNEL`, `FINANCE_FWD_FROM` (your own address that manually forwards bank emails), `FINANCE_OWNER_NAME` (your name as printed on bank transfers).
-State in `~/.hermes/finance-email/`: `skipped.json` (Message-ID -> timestamp, 7-day TTL), `finance-email.log`.
+State in `~/.hermes/finance-email/`: `skipped.json` (Message-ID -> timestamp, 7-day TTL), `pending.json` (Message-IDs fetch woke you for, and whose mailbox they came from), `finance-email.log`.
+
+**Other Kantong accounts** (optional): each reads its own mailbox in its own cron job, with the same keys suffixed by the account name: `IMAP_HOST_BUDI`, `IMAP_USER_BUDI`, `IMAP_PASSWORD_BUDI`, `FINANCE_API_TOKEN_BUDI` (that account's token from `money-manager adduser`), optional `FINANCE_FWD_FROM_BUDI`, `FINANCE_OWNER_NAME_BUDI`. Its state files are `skipped-budi.json` / `pending-budi.json`. When woken for such a mailbox, `data.account` is set; parse exactly the same way, using that payload's own `rules`, `categories`, `assets` and `owner_name`. You don't pick the account: `post.py` sends every item to the account whose mailbox it came from.
 
 ## Pipeline
 Scripts live in `~/.hermes/skills/finance-email/scripts/` (Python stdlib only).
@@ -37,14 +39,16 @@ Scripts live in `~/.hermes/skills/finance-email/scripts/` (Python stdlib only).
    ```
    echo '{"transactions":[{...}],"orders":[{...}],"skip":["<id>"]}' | python3 ~/.hermes/skills/finance-email/scripts/post.py
    ```
-   It writes `skipped.json`, POSTs each transaction (201/409 = ok; 400 -> body logged; other errors logged and retried next run; no retries within a run), and prints `[SILENT]` (Kantong itself sends a Telegram message for every email transaction, review flag included).
+   It routes each item by its Message-ID to the account fetch woke you for (an ID fetch didn't hand you is not posted), writes `skipped.json`, POSTs each transaction (201/409 = ok; 400 -> body logged; other errors logged and retried next run; no retries within a run), and prints `[SILENT]` (Kantong itself sends a Telegram message for every email transaction, review flag included).
 4. **Final response** — output exactly what `post.py` printed on stdout (the summary or `[SILENT]`), nothing else. Cron delivers it to Telegram; `[SILENT]` suppresses delivery.
 
 ## Cron
 `hermes cron` job `finance-email`, `every 10m`, `--script finance-email-fetch.py`, `--skill finance-email`, `--deliver telegram`.
+Per extra account: a copy of the wrapper named `finance-email-fetch-<account>.py` and job `finance-email-<account>` with that script.
 
 ## Manual run / debug
 ```
 python3 ~/.hermes/skills/finance-email/scripts/fetch.py      # inspect gate output
+python3 ~/.hermes/skills/finance-email/scripts/fetch.py budi # same for account budi's mailbox
 tail ~/.hermes/finance-email/finance-email.log
 ```
