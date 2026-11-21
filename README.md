@@ -90,14 +90,25 @@ curl http://127.0.0.1:8080/healthz   # -> ok
 | Env | Default | Keterangan |
 |---|---|---|
 | `API_TOKEN` | – | Bearer token untuk agent/script |
-| `APP_PASSWORD` | – | Password login PWA |
+| `APP_USER` / `APP_PASSWORD` | `owner` / – | Akun pertama, dibuat sekali saat start pertama (password disimpan sebagai hash di database). Setelah itu `APP_PASSWORD` diabaikan dan boleh dihapus dari `.env` |
 | `SESSION_SECRET` | – | Minimal 32 karakter, kunci HMAC untuk ID sesi di database. Menggantinya mengeluarkan semua perangkat |
 | `HOST_BIND` / `HOST_PORT` | `127.0.0.1` / `8080` | Alamat & port yang di-publish compose |
 | `COOKIE_SECURE` | `true` | Set `false` hanya kalau diakses lewat HTTP biasa (tanpa HTTPS, PWA tidak bisa di-install) |
-| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | – | Notifikasi transaksi dari email; kosong = mati |
+| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | – | Notifikasi transaksi dari email untuk akun pertama; kosong = mati. Tiap akun juga bisa menghubungkan bot sendiri di **Akun & perangkat** (token disimpan terenkripsi dengan kunci dari `SESSION_SECRET`; mengganti `SESSION_SECRET` berarti bot harus dihubungkan ulang) |
 | `FX_URL` | `https://api.frankfurter.dev` | Sumber kurs |
 | `GOLD_URL` | `https://api.gold-api.com` | Harga emas spot (aset mata uang `XAU` = gram) |
 | `DB_PATH` / `PORT` | `/data/money.db` / `8080` | Di dalam container |
+
+### Akun
+
+Login pakai username + password. Tambah akun atau reset password dari server (password acak dicetak sekali, reset juga mengeluarkan semua perangkat akun itu):
+
+```sh
+docker compose exec money /money-manager adduser budi
+docker compose exec money /money-manager passwd budi
+```
+
+Login salah 5 kali untuk satu username menguncinya 15 menit. Data tiap akun terpisah penuh (transaksi, aset, budget, aturan, kategori buatan sendiri). `adduser` juga mencetak API token untuk akun itu (dipakai Hermes/script); token tambahan: `money-manager token <nama>`. `API_TOKEN` di `.env` tetap milik akun pertama. Chat AI di web hanya untuk akun pertama. Akun lain bisa pakai Hermes lewat Telegram dengan profile Hermes sendiri (lihat `docs/hermes-email.md` bagian 8).
 
 Perubahan `.env` baru terpakai setelah `docker compose up -d --force-recreate`.
 
@@ -116,7 +127,7 @@ DB_PATH=./money.db npm run dev               # go run + Vite (proxy /api ke :808
 
 ## API
 
-Semua endpoint `/api/*` butuh `Authorization: Bearer $API_TOKEN` atau cookie sesi dari `POST /api/login`.
+Semua endpoint `/api/*` butuh `Authorization: Bearer $API_TOKEN` (bertindak sebagai akun pertama) atau cookie sesi dari `POST /api/login` (`{"username","password"}`).
 
 | Endpoint | Fungsi |
 |---|---|
@@ -134,6 +145,8 @@ Semua endpoint `/api/*` butuh `Authorization: Bearer $API_TOKEN` atau cookie ses
 | `GET /api/export.xlsx` | Export Semua transaksi (Excel) |
 | `GET /api/events` | Stream SSE |
 | `POST /api/logout` | Keluar dari perangkat ini: sesinya dihapus dan cookie dibersihkan (204). Tanpa auth, aman dipanggil berulang |
+| `GET /api/me` | Akun yang login: `username`, `telegram` (`connected`, `chat_id`, `from_env`). Token bot tidak pernah dikirim balik |
+| `PUT /api/me/telegram` | `{"bot_token","chat_id"}`: hubungkan bot sendiri (dikirim pesan tes dulu); dua-duanya kosong = putuskan |
 | `GET /api/sessions` | Perangkat yang sedang login: `id`, `user_agent`, `ip`, `created_at`, `last_seen`, `current` (sesi pemanggil) |
 | `DELETE /api/sessions/{id}` | Keluarkan satu perangkat (204; 404 kalau sudah tidak ada). Stream SSE-nya ikut diputus |
 | `POST /api/sessions/revoke` | Keluarkan semua perangkat kecuali pemanggil (dengan `API_TOKEN`: semua perangkat). `API_TOKEN` sendiri tidak ikut dicabut; ganti nilainya di `.env` untuk memutus script |

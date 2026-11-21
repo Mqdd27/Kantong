@@ -113,6 +113,48 @@ Setiap 10 menit, `fetch.py` jalan duluan tanpa LLM. Hermes cuma dibangunkan kala
 
 Mau mengisi aset dari screenshot portofolio juga? Lihat [hermes-assets.md](hermes-assets.md).
 
+## 8. Akun Kantong kedua (opsional)
+
+Tiap orang dapat **profile Hermes** sendiri. Instalasi Hermes-nya tetap satu, tapi tiap profile punya memori, `.env`, bot Telegram, dan cron sendiri. Email, foto struk, screenshot portofolio, dan chat orang itu masuk ke akun Kantong-nya sendiri, dan Hermes-nya tidak tahu apa-apa soal keuanganmu.
+
+1. Bikin akun dan token-nya di server Kantong:
+   ```sh
+   docker compose exec money /money-manager adduser budi   # catat password dan api token
+   ```
+2. Bikin profile. `--clone` menyalin config, `.env`, dan skill dari profile default, jadi model dan API key LLM ikut dipakai bareng. Token bot Telegram tidak ikut tersalin.
+   ```sh
+   hermes profile create budi --clone
+   ```
+3. Edit `~/.hermes/profiles/budi/.env`:
+   ```sh
+   FINANCE_API_TOKEN=api-token-dari-langkah-1
+   IMAP_HOST=imap.gmail.com                # mailbox Budi
+   IMAP_USER=budi@gmail.com
+   IMAP_PASSWORD=app-password-budi
+   FINANCE_FWD_FROM=                       # opsional
+   FINANCE_OWNER_NAME=NAMA LENGKAP BUDI
+   API_SERVER_ENABLED=false                # port 8642 sudah dipakai profile default
+   ```
+   Kalau Budi mau pakai API key LLM sendiri, ganti key-nya di file ini (dan provider/model di `~/.hermes/profiles/budi/config.yaml` kalau beda).
+4. Hubungkan bot Telegram Budi (bikin di @BotFather), lalu jalankan gateway-nya:
+   ```sh
+   hermes -p budi gateway setup
+   hermes -p budi gateway install
+   ```
+   Bot yang sama boleh dipakai Budi untuk notif transaksi di Kantong (**Akun & perangkat**): Kantong cuma mengirim, Hermes yang membaca chat.
+5. Pasang wrapper dan cron email di profile Budi:
+   ```sh
+   cp hermes/finance-email-fetch.py ~/.hermes/profiles/budi/scripts/
+   hermes -p budi cron create --name finance-email --script finance-email-fetch.py --skill finance-email --deliver telegram 10m
+   ```
+6. Tes: `python3 ~/.hermes/profiles/budi/skills/finance-email/scripts/fetch.py`. Log-nya ada di `~/.hermes/profiles/budi/finance-email/`.
+
+Skill membaca `.env` dari profile tempat skill itu terpasang, dan `post.py` hanya mengirim email yang ditemukan `fetch.py` di profile yang sama. Jadi kalau Hermes salah memanggil skill milik profile lain, email itu tidak terkirim, bukan masuk ke akun yang salah.
+
+Chat AI di aplikasi web Kantong tetap hanya untuk akun pertama.
+
+Kalau skill di repo berubah, update salinannya di setiap profile.
+
 ## Troubleshooting
 
 | Gejala | Cek |

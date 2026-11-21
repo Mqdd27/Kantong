@@ -13,13 +13,14 @@ Turns bank/broker notification emails (Jago, Stockbit, Krom, BCA, Bibit, SeaBank
 Runs from cron every 10 min. Parsing rules live in `parsing-rules.md` (same dir) — **read it before parsing**.
 
 ## Config (never write secrets into this skill)
-From `~/.hermes/.env`: `IMAP_HOST`, `IMAP_USER`, `IMAP_PASSWORD`, `FINANCE_API_URL`, `FINANCE_API_TOKEN` (sent as `Authorization: Bearer`), `TELEGRAM_HOME_CHANNEL`, `FINANCE_FWD_FROM` (your own address that manually forwards bank emails), `FINANCE_OWNER_NAME` (your name as printed on bank transfers).
-State in `~/.hermes/finance-email/`: `skipped.json` (Message-ID -> timestamp, 7-day TTL), `finance-email.log`.
+From the `.env` of this skill's Hermes profile (`~/.hermes/.env` in the default profile): `IMAP_HOST`, `IMAP_USER`, `IMAP_PASSWORD`, `FINANCE_API_URL`, `FINANCE_API_TOKEN` (sent as `Authorization: Bearer`), `TELEGRAM_HOME_CHANNEL`, `FINANCE_FWD_FROM` (your own address that manually forwards bank emails), `FINANCE_OWNER_NAME` (your name as printed on bank transfers).
+State in `finance-email/` of the same profile: `skipped.json` (Message-ID -> timestamp, 7-day TTL), `pending.json` (Message-IDs fetch handed out), `finance-email.log`.
+Each Hermes profile is one Kantong account: its own mailbox, token and copy of this skill. Always run the scripts at the paths below, never another profile's copy.
 
 ## Pipeline
-Scripts live in `~/.hermes/skills/finance-email/scripts/` (Python stdlib only).
+Scripts live in `${HERMES_SKILL_DIR}/scripts/` (Python stdlib only).
 
-1. **Fetch (script, no LLM)** — `scripts/fetch.py` (cron calls it through `~/.hermes/scripts/finance-email-fetch.py`):
+1. **Fetch (script, no LLM)** — `scripts/fetch.py` (cron calls it through `scripts/finance-email-fetch.py` in the profile's home):
    IMAP read-only (`select readonly=True`, `BODY.PEEK[]`) on INBOX + Junk, `SINCE` 3 days; keeps only allowlisted senders, including the original sender of manual `Fwd:` forwards from `FINANCE_FWD_FROM`; drops Message-IDs in `skipped.json`; asks `POST /api/source-refs/check`; keeps only `unknown`.
    Its last stdout line is JSON: `{"wakeAgent": false}` when nothing is new (cron then skips the LLM and sends nothing), otherwise `{"wakeAgent": true, "data": {"emails": [...], "rules": [...], "categories": [...]}}`.
 2. **Parse (you, only when woken)** — for each email in `data.emails`, apply `parsing-rules.md`.
@@ -35,9 +36,9 @@ Scripts live in `~/.hermes/skills/finance-email/scripts/` (Python stdlib only).
    - An email you cannot confidently classify either way: leave it out of both lists (it will be retried next run).
 3. **Post (script)** — pipe JSON to `scripts/post.py`:
    ```
-   echo '{"transactions":[{...}],"orders":[{...}],"skip":["<id>"]}' | python3 ~/.hermes/skills/finance-email/scripts/post.py
+   echo '{"transactions":[{...}],"orders":[{...}],"skip":["<id>"]}' | python3 ${HERMES_SKILL_DIR}/scripts/post.py
    ```
-   It writes `skipped.json`, POSTs each transaction (201/409 = ok; 400 -> body logged; other errors logged and retried next run; no retries within a run), and prints `[SILENT]` (Kantong itself sends a Telegram message for every email transaction, review flag included).
+   It ignores any Message-ID this profile's fetch didn't hand out, writes `skipped.json`, POSTs each transaction (201/409 = ok; 400 -> body logged; other errors logged and retried next run; no retries within a run), and prints `[SILENT]` (Kantong itself sends a Telegram message for every email transaction, review flag included).
 4. **Final response** — output exactly what `post.py` printed on stdout (the summary or `[SILENT]`), nothing else. Cron delivers it to Telegram; `[SILENT]` suppresses delivery.
 
 ## Cron
@@ -45,6 +46,6 @@ Scripts live in `~/.hermes/skills/finance-email/scripts/` (Python stdlib only).
 
 ## Manual run / debug
 ```
-python3 ~/.hermes/skills/finance-email/scripts/fetch.py      # inspect gate output
-tail ~/.hermes/finance-email/finance-email.log
+python3 ${HERMES_SKILL_DIR}/scripts/fetch.py      # inspect gate output
+tail ${HERMES_SKILL_DIR}/../../finance-email/finance-email.log
 ```

@@ -33,7 +33,7 @@
 
 <PageHead title="Beranda">
   {#if s.chat}<a class="icon" href="#/chat" aria-label="Tanya asisten"><Icon name="chat" /></a>{/if}
-  <a class="icon" href="#/devices" aria-label="Perangkat & keluar" title="Perangkat & keluar"><Icon name="laptop" /></a>
+  <a class="icon" href="#/devices" aria-label="Akun & perangkat" title="Akun & perangkat"><Icon name="laptop" /></a>
 </PageHead>
 <MonthBar />
 

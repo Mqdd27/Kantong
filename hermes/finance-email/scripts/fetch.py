@@ -11,7 +11,7 @@ from email.utils import parseaddr
 from datetime import datetime, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from common import load_env, log, load_skipped, api, WIB
+from common import load_env, log, load_skipped, remember_fetched, api, WIB
 
 ALLOW = {"noreply@jago.com", "no-reply@stockbit.com", "noreply@krom.id", "bca@bca.co.id",
          "pasporbca@klikbca.com", "no-reply@bibit.id", "alerts@seabank.co.id"}
@@ -144,6 +144,7 @@ def main():
         log(f"FETCH api error: {type(e).__name__}: {e}")
         done(False)
 
+    remember_fetched([c["message_id"] for c in todo])
     log(f"FETCH {len(todo)} unknown email(s) -> waking agent")
     try:
         st, pf = api(env, "GET", "/api/assets")
