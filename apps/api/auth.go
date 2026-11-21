@@ -19,9 +19,13 @@ const (
 )
 
 type sidKey struct{}
+type uidKey struct{}
 
 // sessionID is the id of the cookie session making the request; "" for Bearer API_TOKEN calls.
 func sessionID(r *http.Request) string { s, _ := r.Context().Value(sidKey{}).(string); return s }
+
+// userID is the account making the request; API_TOKEN calls act as the first user.
+func userID(r *http.Request) int64 { u, _ := r.Context().Value(uidKey{}).(int64); return u }
 
 // secretEq compares hashes so neither content nor length leaks through timing.
 func secretEq(a, b string) bool {
@@ -36,23 +40,25 @@ func (a *app) sign(tok string) string {
 	return base64.RawURLEncoding.EncodeToString(m.Sum(nil))
 }
 
-// session returns the id of the live session behind the cookie, or "". Cookies from before
+// session returns the id and user of the live session behind the cookie, or "". Cookies from before
 // sessions were stored (exp.sig) match no row, so every device signs in once after the upgrade.
-func (a *app) session(r *http.Request) string {
+func (a *app) session(r *http.Request) (string, int64) {
 	c, err := r.Cookie(sessionCookie)
 	if err != nil || c.Value == "" {
-		return ""
+		return "", 0
 	}
 	id := a.sign(c.Value)
 	var lastSeen string
-	if a.db.QueryRow(`SELECT last_seen FROM sessions WHERE id = ? AND expires_at > ?`, id, time.Now().Unix()).Scan(&lastSeen) != nil {
-		return ""
+	var uid int64
+	if a.db.QueryRow(`SELECT last_seen, user_id FROM sessions WHERE id = ? AND expires_at > ? AND user_id IS NOT NULL`,
+		id, time.Now().Unix()).Scan(&lastSeen, &uid) != nil {
+		return "", 0
 	}
 	// last_seen is for the device list: minute precision is plenty and spares a write per request
 	if now := time.Now().UTC(); lastSeen < now.Add(-time.Minute).Format(time.RFC3339) {
 		a.db.Exec(`UPDATE sessions SET last_seen = ?, ip = ? WHERE id = ?`, now.Format(time.RFC3339), clientIP(r), id)
 	}
-	return id
+	return id, uid
 }
 
 func clientIP(r *http.Request) string {
@@ -67,11 +73,12 @@ func clientIP(r *http.Request) string {
 func (a *app) auth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if tok, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok && secretEq(tok, a.cfg.apiToken) {
-			next.ServeHTTP(w, r)
+			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), uidKey{}, a.ownerID)))
 			return
 		}
-		if id := a.session(r); id != "" {
-			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), sidKey{}, id)))
+		if id, uid := a.session(r); id != "" {
+			ctx := context.WithValue(context.WithValue(r.Context(), sidKey{}, id), uidKey{}, uid)
+			next.ServeHTTP(w, r.WithContext(ctx))
 			return
 		}
 		writeErr(w, http.StatusUnauthorized, "unauthorized")
@@ -90,22 +97,33 @@ func (a *app) setCookie(w http.ResponseWriter, val string, maxAge int) {
 	})
 }
 
-// ponytail: no login rate limit; API is only reachable inside the tailnet. Add one if exposed publicly.
 func (a *app) login(w http.ResponseWriter, r *http.Request) {
 	var body struct {
+		Username string `json:"username"`
 		Password string `json:"password"`
 	}
 	if !decode(w, r, &body) {
 		return
 	}
-	if !secretEq(body.Password, a.cfg.appPassword) {
-		writeErr(w, http.StatusUnauthorized, "wrong password")
+	name := strings.TrimSpace(body.Username)
+	key := strings.ToLower(name)
+	if a.logins.blocked(key) {
+		writeErr(w, http.StatusTooManyRequests, "too many failed attempts, try again in 15 minutes")
 		return
 	}
+	var uid int64
+	hash := dummyHash()
+	found := a.db.QueryRow(`SELECT id, pass_hash FROM users WHERE username = ?`, name).Scan(&uid, &hash) == nil
+	if !checkPassword(body.Password, hash) || !found {
+		a.logins.fail(key)
+		writeErr(w, http.StatusUnauthorized, "wrong username or password")
+		return
+	}
+	a.logins.reset(key)
 	tok := rand.Text()
 	a.pruneSessions(time.Now())
-	if _, err := a.db.Exec(`INSERT INTO sessions (id, user_agent, ip, expires_at) VALUES (?, ?, ?, ?)`,
-		a.sign(tok), r.UserAgent(), clientIP(r), time.Now().Add(sessionTTL).Unix()); err != nil {
+	if _, err := a.db.Exec(`INSERT INTO sessions (id, user_id, user_agent, ip, expires_at) VALUES (?, ?, ?, ?, ?)`,
+		a.sign(tok), uid, r.UserAgent(), clientIP(r), time.Now().Add(sessionTTL).Unix()); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -154,7 +172,8 @@ type Session struct {
 }
 
 func (a *app) listSessions(w http.ResponseWriter, r *http.Request) {
-	rows, err := a.db.Query(`SELECT id, user_agent, ip, created_at, last_seen FROM sessions WHERE expires_at > ? ORDER BY last_seen DESC`, time.Now().Unix())
+	rows, err := a.db.Query(`SELECT id, user_agent, ip, created_at, last_seen FROM sessions WHERE user_id = ? AND expires_at > ? ORDER BY last_seen DESC`,
+		userID(r), time.Now().Unix())
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
@@ -176,7 +195,7 @@ func (a *app) listSessions(w http.ResponseWriter, r *http.Request) {
 // deleteSession signs out one device. Ending your own session also clears your cookie.
 func (a *app) deleteSession(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	n, err := a.endSessions(`id = ?`, id)
+	n, err := a.endSessions(`id = ? AND user_id = ?`, id, userID(r))
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
@@ -191,13 +210,12 @@ func (a *app) deleteSession(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// revokeSessions signs out every device except the caller's (all of them when called with API_TOKEN).
-// API_TOKEN itself is untouched: rotate it in .env to cut off scripts.
+// revokeSessions signs out every other device of the caller's account (all of the first user's
+// when called with API_TOKEN). API_TOKEN itself is untouched: rotate it in .env to cut off scripts.
 func (a *app) revokeSessions(w http.ResponseWriter, r *http.Request) {
-	if _, err := a.endSessions(`id != ?`, sessionID(r)); err != nil {
+	if _, err := a.endSessions(`id != ? AND user_id = ?`, sessionID(r), userID(r)); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
-

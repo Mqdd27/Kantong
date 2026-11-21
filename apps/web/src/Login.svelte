@@ -1,6 +1,8 @@
 <script>
   import { login } from './lib/store.svelte.js'
+  import { AuthError } from './lib/api.js'
 
+  let username = $state('')
   let password = $state('')
   let error = $state('')
   let busy = $state(false)
@@ -10,9 +12,9 @@
     busy = true
     error = ''
     try {
-      await login(password)
-    } catch {
-      error = 'Password salah'
+      await login(username.trim(), password)
+    } catch (e) {
+      error = e instanceof AuthError ? 'Username atau password salah' : /too many/.test(e.message) ? 'Terlalu banyak percobaan gagal. Coba lagi 15 menit lagi.' : 'Gagal masuk, coba lagi'
     }
     busy = false
   }
@@ -20,6 +22,8 @@
 
 <form onsubmit={submit}>
   <h1>Kantong</h1>
+  <label for="user" class="sr-only">Username</label>
+  <input id="user" bind:value={username} placeholder="Username" autocomplete="username" autocapitalize="none" spellcheck="false" required />
   <label for="pw" class="sr-only">Password</label>
   <input id="pw" type="password" bind:value={password} placeholder="Password" autocomplete="current-password" required />
   <button class="primary" disabled={busy}>Masuk</button>

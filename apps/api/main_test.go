@@ -121,10 +121,10 @@ func TestAuth(t *testing.T) {
 	if res, _ := http.Get(srv.URL + "/healthz"); res.StatusCode != 200 {
 		t.Fatalf("healthz: %d", res.StatusCode)
 	}
-	if res, _ := http.Post(srv.URL+"/api/login", "application/json", strings.NewReader(`{"password":"x"}`)); res.StatusCode != 401 {
+	if res, _ := http.Post(srv.URL+"/api/login", "application/json", strings.NewReader(`{"username":"owner","password":"x"}`)); res.StatusCode != 401 {
 		t.Fatalf("bad login: %d", res.StatusCode)
 	}
-	res, _ = http.Post(srv.URL+"/api/login", "application/json", strings.NewReader(`{"password":"pw"}`))
+	res, _ = http.Post(srv.URL+"/api/login", "application/json", strings.NewReader(`{"username":"owner","password":"pw"}`))
 	if res.StatusCode != 204 || len(res.Cookies()) != 1 {
 		t.Fatalf("login: %d", res.StatusCode)
 	}
@@ -629,7 +629,7 @@ func TestEmailTransferWithoutDestinationNeedsReview(t *testing.T) {
 
 // Due day 5: the next due date rolls over after the 5th; a missed one needs a payment after the 5th of the month before.
 func TestDebtDueStatus(t *testing.T) {
-	a, err := newApp(config{dbPath: filepath.Join(t.TempDir(), "t.db"), sessionSecret: strings.Repeat("s", 32)})
+	a, err := newApp(config{appPassword: "pw", dbPath: filepath.Join(t.TempDir(), "t.db"), sessionSecret: strings.Repeat("s", 32)})
 	if err != nil {
 		t.Fatal(err)
 	}

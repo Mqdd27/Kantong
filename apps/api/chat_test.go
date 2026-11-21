@@ -34,7 +34,7 @@ func TestChatViaHermes(t *testing.T) {
 	}))
 	defer hermes.Close()
 
-	a, err := newApp(config{dbPath: filepath.Join(t.TempDir(), "t.db"), apiToken: token, sessionSecret: strings.Repeat("s", 32),
+	a, err := newApp(config{appPassword: "pw", dbPath: filepath.Join(t.TempDir(), "t.db"), apiToken: token, sessionSecret: strings.Repeat("s", 32),
 		hermesURL: hermes.URL, hermesKey: "hk", chatModels: "9router:cc/claude-sonnet-5-5, 9router:cx/gpt-5.5"})
 	if err != nil {
 		t.Fatal(err)
@@ -101,7 +101,7 @@ func newInsightServer(t *testing.T, reply string, seen *[]map[string]any) *httpt
 		json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]any{"content": reply}}}})
 	}))
 	t.Cleanup(hermes.Close)
-	a, err := newApp(config{dbPath: filepath.Join(t.TempDir(), "t.db"), apiToken: token, sessionSecret: strings.Repeat("s", 32),
+	a, err := newApp(config{appPassword: "pw", dbPath: filepath.Join(t.TempDir(), "t.db"), apiToken: token, sessionSecret: strings.Repeat("s", 32),
 		hermesURL: hermes.URL, hermesKey: "hk", chatModels: "9router:cc/claude-sonnet-5-5"})
 	if err != nil {
 		t.Fatal(err)
@@ -203,7 +203,7 @@ func TestInsightViaHermes(t *testing.T) {
 func TestInsightHermesFailure(t *testing.T) {
 	hermes := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Error(w, "boom", 500) }))
 	defer hermes.Close()
-	a, err := newApp(config{dbPath: filepath.Join(t.TempDir(), "t.db"), apiToken: token, sessionSecret: strings.Repeat("s", 32), hermesURL: hermes.URL})
+	a, err := newApp(config{appPassword: "pw", dbPath: filepath.Join(t.TempDir(), "t.db"), apiToken: token, sessionSecret: strings.Repeat("s", 32), hermesURL: hermes.URL})
 	if err != nil {
 		t.Fatal(err)
 	}
