@@ -11,7 +11,7 @@ from email.utils import parseaddr
 from datetime import datetime, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from common import load_env, log, load_skipped, remember_pending, for_account, api, WIB
+from common import load_env, log, load_skipped, remember_fetched, api, WIB
 
 ALLOW = {"noreply@jago.com", "no-reply@stockbit.com", "noreply@krom.id", "bca@bca.co.id",
          "pasporbca@klikbca.com", "no-reply@bibit.id", "alerts@seabank.co.id"}
@@ -74,14 +74,10 @@ def effective_sender(msg, text, fwd_from=""):
 
 
 def main():
-    # "" = the first account; another one comes from the wrapper's name (finance-email-fetch-budi.py)
-    # or the command line (fetch.py budi). Never from .env, so the default cron job can't turn into it.
-    account = os.environ.get("FINANCE_ACCOUNT") or (sys.argv[1] if len(sys.argv) > 1 else "")
-    env = for_account(load_env(), account)
-    tag = f"[{account}] " if account else ""
+    env = load_env()
     for k in ("IMAP_HOST", "IMAP_USER", "IMAP_PASSWORD", "FINANCE_API_URL", "FINANCE_API_TOKEN"):
         if not env.get(k):
-            log(f"{tag}FETCH config missing: {k}{'_' + account.upper() if account and k != 'FINANCE_API_URL' else ''}")
+            log(f"FETCH config missing: {k}")
             done(False)
 
     d = datetime.now(WIB) - timedelta(days=DAYS)
@@ -120,10 +116,10 @@ def main():
         except Exception:
             pass
     except Exception as e:
-        log(f"{tag}FETCH imap error: {type(e).__name__}: {e}")
+        log(f"FETCH imap error: {type(e).__name__}: {e}")
         done(False)
 
-    skipped = load_skipped(account)
+    skipped = load_skipped()
     cand = [v for k, v in found.items() if k not in skipped]
     if not cand:
         done(False)
@@ -131,7 +127,7 @@ def main():
     try:
         st, res = api(env, "POST", "/api/source-refs/check", {"refs": [c["message_id"] for c in cand]})
         if st != 200 or not isinstance(res, dict):
-            log(f"{tag}FETCH check HTTP {st}: {str(res)[:300]}")
+            log(f"FETCH check HTTP {st}: {str(res)[:300]}")
             done(False)
         unknown = set(res.get("unknown") or [])
         todo = [c for c in cand if c["message_id"] in unknown]
@@ -145,11 +141,11 @@ def main():
         if st != 200:
             cats = []
     except Exception as e:
-        log(f"{tag}FETCH api error: {type(e).__name__}: {e}")
+        log(f"FETCH api error: {type(e).__name__}: {e}")
         done(False)
 
-    remember_pending([c["message_id"] for c in todo], account)
-    log(f"{tag}FETCH {len(todo)} unknown email(s) -> waking agent")
+    remember_fetched([c["message_id"] for c in todo])
+    log(f"FETCH {len(todo)} unknown email(s) -> waking agent")
     try:
         st, pf = api(env, "GET", "/api/assets")
         assets = [{"name": a["name"], "kind": a["kind"], "currency": a["currency"]} for a in pf["assets"]] if st == 200 else []
@@ -158,11 +154,8 @@ def main():
     except Exception as e:
         log(f"FETCH assets error: {e}")
         assets, pending = [], []
-    data = {"emails": todo, "rules": rules, "categories": cats, "assets": assets, "pending_orders": pending,
-            "owner_name": env.get("FINANCE_OWNER_NAME", "")}
-    if account:
-        data["account"] = account
-    done(True, data)
+    done(True, {"emails": todo, "rules": rules, "categories": cats, "assets": assets, "pending_orders": pending,
+          "owner_name": env.get("FINANCE_OWNER_NAME", "")})
 
 
 if __name__ == "__main__":

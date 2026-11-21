@@ -6,13 +6,16 @@ from pathlib import Path
 
 
 def env():
+    """The .env of the Hermes profile this copy is installed in (<home>/skills/<skill>/scripts/), so each
+    profile posts with its own Kantong token. Its values win over the inherited environment."""
     e = dict(os.environ)
-    p = Path.home() / ".hermes" / ".env"
+    here = Path(__file__).resolve()
+    p = (here.parents[3] if here.parents[2].name == "skills" else Path.home() / ".hermes") / ".env"
     if p.exists():
         for line in p.read_text().splitlines():
             if "=" in line and not line.lstrip().startswith("#"):
                 k, v = line.split("=", 1)
-                e.setdefault(k.strip(), v.strip().strip("\"'"))
+                e[k.strip()] = v.strip().strip("\"'")
     return e
 
 
