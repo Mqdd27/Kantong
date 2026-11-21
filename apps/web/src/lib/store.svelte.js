@@ -239,8 +239,8 @@ export async function deleteTx(id) {
   }
 }
 
-export async function login(password) {
-  await api('/login', { method: 'POST', body: { password } })
+export async function login(username, password) {
+  await api('/login', { method: 'POST', body: { username, password } })
   s.authed = true
 }
 

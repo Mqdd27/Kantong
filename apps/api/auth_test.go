@@ -13,7 +13,13 @@ import (
 
 func loginAs(t *testing.T, srv *httptest.Server, ua string) *http.Cookie {
 	t.Helper()
-	req, _ := http.NewRequest("POST", srv.URL+"/api/login", strings.NewReader(`{"password":"pw"}`))
+	return loginUser(t, srv, "owner", "pw", ua)
+}
+
+func loginUser(t *testing.T, srv *httptest.Server, user, pw, ua string) *http.Cookie {
+	t.Helper()
+	body, _ := json.Marshal(map[string]string{"username": user, "password": pw})
+	req, _ := http.NewRequest("POST", srv.URL+"/api/login", strings.NewReader(string(body)))
 	req.Header.Set("User-Agent", ua)
 	res, err := http.DefaultClient.Do(req)
 	if err != nil || res.StatusCode != 204 || len(res.Cookies()) != 1 {

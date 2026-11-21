@@ -90,7 +90,7 @@ curl http://127.0.0.1:8080/healthz   # -> ok
 | Env | Default | Keterangan |
 |---|---|---|
 | `API_TOKEN` | – | Bearer token untuk agent/script |
-| `APP_PASSWORD` | – | Password login PWA |
+| `APP_USER` / `APP_PASSWORD` | `owner` / – | Akun pertama, dibuat sekali saat start pertama (password disimpan sebagai hash di database). Setelah itu `APP_PASSWORD` diabaikan dan boleh dihapus dari `.env` |
 | `SESSION_SECRET` | – | Minimal 32 karakter, kunci HMAC untuk ID sesi di database. Menggantinya mengeluarkan semua perangkat |
 | `HOST_BIND` / `HOST_PORT` | `127.0.0.1` / `8080` | Alamat & port yang di-publish compose |
 | `COOKIE_SECURE` | `true` | Set `false` hanya kalau diakses lewat HTTP biasa (tanpa HTTPS, PWA tidak bisa di-install) |
@@ -98,6 +98,17 @@ curl http://127.0.0.1:8080/healthz   # -> ok
 | `FX_URL` | `https://api.frankfurter.dev` | Sumber kurs |
 | `GOLD_URL` | `https://api.gold-api.com` | Harga emas spot (aset mata uang `XAU` = gram) |
 | `DB_PATH` / `PORT` | `/data/money.db` / `8080` | Di dalam container |
+
+### Akun
+
+Login pakai username + password. Tambah akun atau reset password dari server (password acak dicetak sekali, reset juga mengeluarkan semua perangkat akun itu):
+
+```sh
+docker compose exec money /money-manager adduser budi
+docker compose exec money /money-manager passwd budi
+```
+
+Login salah 5 kali untuk satu username menguncinya 15 menit.
 
 Perubahan `.env` baru terpakai setelah `docker compose up -d --force-recreate`.
 
@@ -116,7 +127,7 @@ DB_PATH=./money.db npm run dev               # go run + Vite (proxy /api ke :808
 
 ## API
 
-Semua endpoint `/api/*` butuh `Authorization: Bearer $API_TOKEN` atau cookie sesi dari `POST /api/login`.
+Semua endpoint `/api/*` butuh `Authorization: Bearer $API_TOKEN` (bertindak sebagai akun pertama) atau cookie sesi dari `POST /api/login` (`{"username","password"}`).
 
 | Endpoint | Fungsi |
 |---|---|

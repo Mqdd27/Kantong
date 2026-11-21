@@ -15,7 +15,7 @@ func newChatServer(t *testing.T, h http.HandlerFunc) *httptest.Server {
 	t.Helper()
 	hermes := httptest.NewServer(h)
 	t.Cleanup(hermes.Close)
-	a, err := newApp(config{dbPath: filepath.Join(t.TempDir(), "t.db"), apiToken: token, sessionSecret: strings.Repeat("s", 32),
+	a, err := newApp(config{appPassword: "pw", dbPath: filepath.Join(t.TempDir(), "t.db"), apiToken: token, sessionSecret: strings.Repeat("s", 32),
 		hermesURL: hermes.URL, hermesKey: "hk"})
 	if err != nil {
 		t.Fatal(err)
