@@ -108,7 +108,7 @@ docker compose exec money /money-manager adduser budi
 docker compose exec money /money-manager passwd budi
 ```
 
-Login salah 5 kali untuk satu username menguncinya 15 menit. Data tiap akun terpisah penuh (transaksi, aset, budget, aturan, kategori buatan sendiri). `adduser` juga mencetak API token untuk akun itu (dipakai Hermes/script); token tambahan: `money-manager token <nama>`. `API_TOKEN` di `.env` tetap milik akun pertama. Asisten AI (chat) hanya untuk akun pertama, karena Hermes membaca Kantong dengan token akun pertama.
+Login salah 5 kali untuk satu username menguncinya 15 menit. Data tiap akun terpisah penuh (transaksi, aset, budget, aturan, kategori buatan sendiri). `adduser` juga mencetak API token untuk akun itu (dipakai Hermes/script); token tambahan: `money-manager token <nama>`. `API_TOKEN` di `.env` tetap milik akun pertama. Chat AI di web hanya untuk akun pertama. Akun lain bisa pakai Hermes lewat Telegram dengan profile Hermes sendiri (lihat `docs/hermes-email.md` bagian 8).
 
 Perubahan `.env` baru terpakai setelah `docker compose up -d --force-recreate`.
 

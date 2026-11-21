@@ -1,41 +1,22 @@
 """Shared helpers for the finance-email skill (stdlib only). No secrets are stored here."""
-import json, os, re, urllib.request, urllib.error
+import json, os, urllib.request, urllib.error
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
-HOME = Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes"))
+_here = Path(__file__).resolve()
+# The Hermes profile this copy of the skill is installed in (<home>/skills/finance-email/scripts/), so a
+# second profile's copy reads that profile's .env (its own mailbox and Kantong token), whatever the caller's env.
+HOME = _here.parents[3] if _here.parents[2].name == "skills" else Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes"))
 STATE_DIR = HOME / "finance-email"
+SKIPPED = STATE_DIR / "skipped.json"
+PENDING = STATE_DIR / "pending.json"
 LOG = STATE_DIR / "finance-email.log"
 WIB = timezone(timedelta(hours=7))
 SKIP_TTL_DAYS = 7
 
-# Extra mailboxes: each Kantong account reads its own mailbox and posts with its own API token.
-# Account "budi" uses IMAP_HOST_BUDI, IMAP_USER_BUDI, ..., FINANCE_API_TOKEN_BUDI. No fallback to the
-# unsuffixed values: a missing token must never post someone's mail into the first account.
-ACCOUNT_KEYS = ("IMAP_HOST", "IMAP_USER", "IMAP_PASSWORD", "FINANCE_API_TOKEN", "FINANCE_FWD_FROM", "FINANCE_OWNER_NAME")
-
-
-def suffix(account):
-    return "_" + re.sub(r"\W", "_", account).upper() if account else ""
-
-
-def for_account(env, account):
-    """env with KEY_<ACCOUNT> values in place of KEY; the first account ("") is env unchanged."""
-    if not account:
-        return env
-    out = dict(env)
-    for k in ACCOUNT_KEYS:
-        out[k] = env.get(k + suffix(account), "")
-    return out
-
-
-def state_file(name, account=""):
-    """Per-account state: skipped.json / skipped-budi.json, pending.json / pending-budi.json."""
-    return STATE_DIR / (f"{name}-{account}.json" if account else f"{name}.json")
-
 
 def load_env():
-    """Read ~/.hermes/.env (cron strips provider secrets from the child env)."""
+    """Read this profile's .env (cron strips provider secrets from the child env)."""
     env = {}
     p = HOME / ".env"
     if p.exists():
@@ -55,9 +36,8 @@ def log(msg):
         f.write(f"{datetime.now(WIB).isoformat(timespec='seconds')} {msg}\n")
 
 
-def load_map(path):
-    """Return {message_id: value} from a state file, pruned of entries older than 7 days.
-    Values are an iso timestamp, or [iso timestamp, account] in pending files."""
+def load_skipped(path=SKIPPED):
+    """Return {message_id: iso_ts}, pruned of entries older than 7 days."""
     try:
         data = json.loads(path.read_text())
     except (FileNotFoundError, ValueError):
@@ -66,45 +46,32 @@ def load_map(path):
     out = {}
     for k, v in data.items():
         try:
-            if datetime.fromisoformat(v[0] if isinstance(v, list) else v) >= cutoff:
+            if datetime.fromisoformat(v) >= cutoff:
                 out[k] = v
-        except (ValueError, TypeError, IndexError):
+        except ValueError:
             pass
     return out
 
 
-def save_map(path, d):
+def save_skipped(d, path=SKIPPED):
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
     tmp.write_text(json.dumps(d, indent=1))
     tmp.replace(path)
 
 
-def load_skipped(account=""):
-    return load_map(state_file("skipped", account))
-
-
-def save_skipped(d, account=""):
-    save_map(state_file("skipped", account), d)
-
-
-def remember_pending(ids, account):
-    """fetch records which account each woken email belongs to; post.py routes by it, not by the LLM."""
-    path = state_file("pending", account)
-    d = load_map(path)
+def remember_fetched(ids):
+    """fetch.py records the Message-IDs it hands the agent, in this profile's state."""
+    d = load_skipped(PENDING)
     now = datetime.now(WIB).isoformat(timespec="seconds")
-    for i in ids:
-        d[i] = [now, account]
-    save_map(path, d)
+    d.update({i: now for i in ids})
+    save_skipped(d, PENDING)
 
 
-def owner_of(message_id):
-    """The account whose fetch woke the agent for this Message-ID, or None when unknown."""
-    for path in STATE_DIR.glob("pending*.json"):
-        v = load_map(path).get(message_id)
-        if v:
-            return v[1]
-    return None
+def fetched(message_id):
+    """True when this profile's fetch handed out the Message-ID. post.py posts nothing else, so the
+    agent running another profile's copy of post.py can't put one person's mail in the other's account."""
+    return message_id in load_skipped(PENDING)
 
 
 def api(env, method, path, body=None, timeout=20):

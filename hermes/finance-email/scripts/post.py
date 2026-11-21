@@ -6,34 +6,19 @@ stdin: {"transactions": [{occurred_at, amount, type, category, merchant, account
         "orders": [{asset, kind, currency?, side, amount, status, order_ref, source_ref, occurred_at, note?}, ...],
         "skip": ["<message-id>", ...]}
 stdout: a ready-to-send Telegram text if any posted/known tx needs review, else "[SILENT]".
-
-Each item goes to the Kantong account whose mailbox it came from, looked up by Message-ID in the
-pending files fetch.py wrote; an item fetch never woke the agent for is not posted (retried next run).
 """
 import sys, os, json
 from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from common import load_env, log, load_skipped, save_skipped, for_account, owner_of, api, WIB
+from common import load_env, log, load_skipped, save_skipped, fetched, api, WIB
 
 REQ = ("occurred_at", "type", "category", "source_ref")
 ORDER_REQ = ("asset", "side", "amount", "status", "order_ref", "source_ref")
 
 
 def main():
-    base = load_env()
-    envs = {}
-
-    def env_for(ref):
-        """(account, env) for a Message-ID, or (None, None) when fetch didn't wake for it."""
-        account = owner_of(ref)
-        if account is None:
-            log(f"POST unknown Message-ID {ref}: not from this run's fetch, skipped")
-            return None, None
-        if account not in envs:
-            envs[account] = for_account(base, account)
-        return account, envs[account]
-
+    env = load_env()
     try:
         payload = json.load(sys.stdin)
     except ValueError as e:
@@ -42,18 +27,19 @@ def main():
         return
 
     now = datetime.now(WIB).isoformat(timespec="seconds")
-    skip = [s for s in payload.get("skip", []) if isinstance(s, str) and s]
-    by_account = {}
-    for s in skip:
-        account, _ = env_for(s)
-        if account is not None:
-            by_account.setdefault(account, []).append(s)
-    for account, ids in by_account.items():
-        sk = load_skipped(account)
-        for s in ids:
+    def ours(ref):
+        if fetched(ref):
+            return True
+        log(f"POST {ref}: not handed out by this profile's fetch, ignored")
+        return False
+
+    skip = [s for s in payload.get("skip", []) if isinstance(s, str) and s and ours(s)]
+    if skip:
+        sk = load_skipped()
+        for s in skip:
             sk[s] = now
-        save_skipped(sk, account)
-        log(f"POST skipped {len(ids)} non-transaction email(s){' for ' + account if account else ''}")
+        save_skipped(sk)
+        log(f"POST skipped {len(skip)} non-transaction email(s)")
 
     review, results = [], []
     for t in payload.get("transactions", []):
@@ -76,8 +62,7 @@ def main():
         if miss:
             log(f"POST skip invalid tx ref={t.get('source_ref')} missing={miss}")
             continue
-        _, env = env_for(t["source_ref"])
-        if env is None:
+        if not ours(t["source_ref"]):
             continue
         try:
             st, body = api(env, "POST", "/api/transactions", t)
@@ -103,8 +88,7 @@ def main():
         if miss:
             log(f"ORDER skip invalid ref={o.get('order_ref')} missing={miss}")
             continue
-        account, env = env_for(o["source_ref"])
-        if env is None:
+        if not ours(o["source_ref"]):
             continue
         try:
             st, body = (404, None)
@@ -118,11 +102,12 @@ def main():
         log(f"ORDER {o['order_ref']} {o['status']} -> HTTP {st} {str(body)[:200] if st >= 400 else ''}")
         results.append((o["source_ref"], st))
         if st in (200, 201, 409):
-            done_orders.append((account, o["source_ref"]))  # not a transaction: remember it so fetch won't wake again
-    for account, ref in done_orders:
-        sk = load_skipped(account)
-        sk[ref] = now
-        save_skipped(sk, account)
+            done_orders.append(o["source_ref"])  # not a transaction: remember it so fetch won't wake again
+    if done_orders:
+        sk = load_skipped()
+        for r in done_orders:
+            sk[r] = now
+        save_skipped(sk)
 
     log("POST results: " + ", ".join(f"{r}={s}" for r, s in results))
     print(json.dumps({"results": results}, ensure_ascii=False), file=sys.stderr)
