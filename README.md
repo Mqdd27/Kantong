@@ -183,3 +183,9 @@ docker run --rm -v kantong_money-data:/data alpine sh -c \
   'cp /data/backups/money-2026-11-08.db /data/money.db && rm -f /data/money.db-wal /data/money.db-shm && chown 65532:65532 /data/money.db'
 docker compose start
 ```
+
+## Limitasi
+
+- Kantong tidak dapat akses langsung ke rekening ataupun asset, sehingga ada kemungkinan untuk asset tidak terupdate (jika ada bunga, biaya admin, dll).
+- Aplikasi Kantong masih support hanya 1 akun saja. Lihat [#10](https://github.com/Mqdd27/Kantong/issues/10) untuk rencana dukungan multi-user.
+- Fitur Eksport Excel mengabaikan filter — hasil ekspor tidak sesuai transaksi yang sedang difilter di UI.
