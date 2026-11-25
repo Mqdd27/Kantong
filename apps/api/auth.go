@@ -103,7 +103,7 @@ func (a *app) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tok := rand.Text()
-	a.db.Exec(`DELETE FROM sessions WHERE expires_at <= ?`, time.Now().Unix())
+	a.pruneSessions(time.Now())
 	if _, err := a.db.Exec(`INSERT INTO sessions (id, user_agent, ip, expires_at) VALUES (?, ?, ?, ?)`,
 		a.sign(tok), r.UserAgent(), clientIP(r), time.Now().Add(sessionTTL).Unix()); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
@@ -120,6 +120,12 @@ func (a *app) logout(w http.ResponseWriter, r *http.Request) {
 	}
 	a.setCookie(w, "", -1)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// pruneSessions deletes sessions whose expiry has passed; live ones keep their expiry.
+// Runs at login and daily from backupLoop, so a rarely used install doesn't keep dead rows.
+func (a *app) pruneSessions(now time.Time) (int, error) {
+	return a.endSessions(`expires_at <= ?`, now.Unix())
 }
 
 // endSessions deletes the matching sessions and drops their open SSE streams.

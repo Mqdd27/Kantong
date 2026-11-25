@@ -112,3 +112,66 @@ func TestSessions(t *testing.T) {
 		t.Fatalf("API_TOKEN after revoke: %d", code)
 	}
 }
+
+func TestExpiredSessions(t *testing.T) {
+	a, srv := newTestApp(t)
+	live, old := loginAs(t, srv, "Live"), loginAs(t, srv, "Old")
+	a.db.Exec(`UPDATE sessions SET expires_at = ? WHERE user_agent = 'Old'`, time.Now().Add(-time.Second).Unix())
+	var exp int64
+	a.db.QueryRow(`SELECT expires_at FROM sessions WHERE user_agent = 'Live'`).Scan(&exp)
+
+	// an expired session is refused even before it is pruned
+	if code, _ := as(t, srv, old, "GET", "/api/categories"); code != 401 {
+		t.Fatalf("expired session: %d", code)
+	}
+	if code, _ := as(t, srv, live, "GET", "/api/categories"); code != 200 {
+		t.Fatalf("live session: %d", code)
+	}
+
+	// pruning removes only the expired row; the live one keeps its expiry and stays signed in
+	if n, err := a.pruneSessions(time.Now()); n != 1 || err != nil {
+		t.Fatalf("prune: %d %v", n, err)
+	}
+	var ua string
+	var exp2 int64
+	var n int
+	a.db.QueryRow(`SELECT COUNT(*), MAX(user_agent), MAX(expires_at) FROM sessions`).Scan(&n, &ua, &exp2)
+	if n != 1 || ua != "Live" || exp2 != exp {
+		t.Fatalf("after prune: %d %q %d (want 1 Live %d)", n, ua, exp2, exp)
+	}
+	if code, _ := as(t, srv, live, "GET", "/api/categories"); code != 200 {
+		t.Fatalf("live after prune: %d", code)
+	}
+	if n, _ := a.pruneSessions(time.Now()); n != 0 {
+		t.Fatalf("second prune deleted %d", n)
+	}
+}
+
+func TestLastSeenOncePerMinute(t *testing.T) {
+	a, srv := newTestApp(t)
+	c := loginAs(t, srv, "Mac")
+	seen := func() (s string) { a.db.QueryRow(`SELECT last_seen FROM sessions`).Scan(&s); return }
+	set := func(ago time.Duration) string {
+		v := time.Now().UTC().Add(-ago).Format(time.RFC3339)
+		a.db.Exec(`UPDATE sessions SET last_seen = ?`, v)
+		return v
+	}
+
+	// seen 30s ago: a request doesn't write
+	if v := set(30 * time.Second); as2(t, srv, c) && seen() != v {
+		t.Fatalf("updated within a minute: %s -> %s", v, seen())
+	}
+	// seen 2 min ago: a request moves it forward
+	if v := set(2 * time.Minute); as2(t, srv, c) && seen() <= v {
+		t.Fatalf("not updated after a minute: %s -> %s", v, seen())
+	}
+}
+
+// as2 makes one authenticated request and reports whether it succeeded.
+func as2(t *testing.T, srv *httptest.Server, c *http.Cookie) bool {
+	t.Helper()
+	if code, _ := as(t, srv, c, "GET", "/api/categories"); code != 200 {
+		t.Fatalf("request: %d", code)
+	}
+	return true
+}

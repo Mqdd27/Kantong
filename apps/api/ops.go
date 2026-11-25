@@ -71,6 +71,11 @@ func (a *app) backupLoop(ctx context.Context) {
 		if err := a.backup(time.Now().In(wib), 14); err != nil {
 			slog.Error("backup", "err", err)
 		}
+		if n, err := a.pruneSessions(time.Now()); err != nil {
+			slog.Error("prune sessions", "err", err)
+		} else if n > 0 {
+			slog.Info("prune sessions", "deleted", n)
+		}
 		now := time.Now().In(wib)
 		next := time.Date(now.Year(), now.Month(), now.Day(), 3, 0, 0, 0, wib)
 		if !next.After(now) {
