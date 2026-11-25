@@ -1,5 +1,5 @@
 <script>
-  import { loadSessions, endSession, revokeOthers, logout, deviceName, deviceIcon, fmtShort, loadMe, saveTelegram } from './lib/store.svelte.js'
+  import { loadSessions, endSession, revokeOthers, logout, deviceName, deviceIcon, fmtShort, loadMe, saveTelegram, changePassword } from './lib/store.svelte.js'
   import PageHead from './PageHead.svelte'
   import Icon from './Icon.svelte'
 
@@ -37,6 +37,33 @@
     }
     busy = false
   }
+
+  let pwOpen = $state(false)
+  let pwCur = $state('')
+  let pwNew = $state('')
+  let pwAgain = $state('')
+  let pwMsg = $state('')
+  const pwText = (m) =>
+    m.includes('current password') ? 'Password lama salah'
+    : m.includes('too many') ? 'Terlalu banyak percobaan gagal. Coba lagi 15 menit lagi.'
+    : m.includes('at least 8') ? 'Password baru minimal 8 karakter'
+    : 'Gagal mengganti password, coba lagi'
+  async function savePassword(e) {
+    e.preventDefault()
+    if (pwNew !== pwAgain) return (pwMsg = 'Password baru tidak sama')
+    busy = true
+    pwMsg = ''
+    try {
+      await changePassword(pwCur, pwNew)
+      pwOpen = false
+      pwCur = pwNew = pwAgain = ''
+      pwMsg = 'Password diganti. Perangkat lain sudah dikeluarkan.'
+      await load()
+    } catch (err) {
+      pwMsg = pwText(err.message)
+    }
+    busy = false
+  }
 </script>
 
 {#snippet device(x)}
@@ -53,7 +80,24 @@
 {#if me}
   <h2 class="sec">Akun</h2>
   <section class="card list">
-    <div class="row"><span class="main"><b>{me.username}</b><span class="muted">Password diganti dari server: money-manager passwd {me.username}</span></span></div>
+    {#if pwOpen}
+      <form class="tg" onsubmit={savePassword}>
+        <label>Password lama <input type="password" bind:value={pwCur} autocomplete="current-password" required /></label>
+        <label>Password baru <input type="password" bind:value={pwNew} autocomplete="new-password" minlength="8" required /></label>
+        <label>Ulangi password baru <input type="password" bind:value={pwAgain} autocomplete="new-password" minlength="8" required /></label>
+        <p class="muted">Perangkat lain akan dikeluarkan. Perangkat ini tetap masuk.</p>
+        {#if pwMsg}<p class="err" role="alert">{pwMsg}</p>{/if}
+        <div class="btns">
+          <button type="button" onclick={() => ((pwOpen = false), (pwMsg = ''))}>Batal</button>
+          <button class="primary" disabled={busy}>Simpan</button>
+        </div>
+      </form>
+    {:else}
+      <div class="row">
+        <span class="main"><b>{me.username}</b>{#if pwMsg}<span class="muted" role="status">{pwMsg}</span>{/if}</span>
+        <button onclick={() => ((pwOpen = true), (pwMsg = ''))}>Ganti password</button>
+      </div>
+    {/if}
   </section>
 
   <h2 class="sec">Notifikasi Telegram</h2>

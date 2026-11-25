@@ -215,6 +215,7 @@ func (a *app) routes() http.Handler {
 	api.HandleFunc("POST /api/insight", a.postInsight)
 	api.HandleFunc("GET /api/me", a.getMe)
 	api.HandleFunc("PUT /api/me/telegram", a.setTelegram)
+	api.HandleFunc("PUT /api/me/password", a.changePassword)
 	api.HandleFunc("GET /api/sessions", a.listSessions)
 	api.HandleFunc("DELETE /api/sessions/{id}", a.deleteSession)
 	api.HandleFunc("POST /api/sessions/revoke", a.revokeSessions)

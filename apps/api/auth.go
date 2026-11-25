@@ -225,3 +225,52 @@ func (a *app) revokeSessions(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
+
+// changePassword sets a new password for the signed-in account and signs out its other devices:
+// {"current", "new"}. Only from a signed-in device (not an API token), and a wrong current password
+// counts toward the same lockout as a failed login, so a stolen session can't guess it.
+func (a *app) changePassword(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Current string `json:"current"`
+		New     string `json:"new"`
+	}
+	if !decode(w, r, &body) {
+		return
+	}
+	if sessionID(r) == "" {
+		writeErr(w, http.StatusForbidden, "change the password from a signed-in device")
+		return
+	}
+	if len([]rune(body.New)) < 8 {
+		writeErr(w, http.StatusBadRequest, "new password must be at least 8 characters")
+		return
+	}
+	var name, hash string
+	if err := a.db.QueryRow(`SELECT username, pass_hash FROM users WHERE id = ?`, userID(r)).Scan(&name, &hash); err != nil {
+		a.fail(w, err)
+		return
+	}
+	key := strings.ToLower(name)
+	if a.logins.blocked(key) {
+		writeErr(w, http.StatusTooManyRequests, "too many failed attempts, try again in 15 minutes")
+		return
+	}
+	if !checkPassword(body.Current, hash) {
+		a.logins.fail(key)
+		writeErr(w, http.StatusForbidden, "current password is wrong")
+		return
+	}
+	a.logins.reset(key)
+	h, err := hashPassword(body.New)
+	if err == nil {
+		_, err = a.db.Exec(`UPDATE users SET pass_hash = ? WHERE id = ?`, h, userID(r))
+	}
+	if err == nil {
+		_, err = a.endSessions(`id != ? AND user_id = ?`, sessionID(r), userID(r))
+	}
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}

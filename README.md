@@ -108,7 +108,7 @@ docker compose exec money /money-manager adduser budi
 docker compose exec money /money-manager passwd budi
 ```
 
-Login salah 5 kali untuk satu username menguncinya 15 menit. Data tiap akun terpisah penuh (transaksi, aset, budget, aturan, kategori buatan sendiri). `adduser` juga mencetak API token untuk akun itu (dipakai Hermes/script); token tambahan: `money-manager token <nama>`. `API_TOKEN` di `.env` tetap milik akun pertama. Chat AI di web hanya untuk akun pertama. Akun lain bisa pakai Hermes lewat Telegram dengan profile Hermes sendiri (lihat `docs/hermes-email.md` bagian 8).
+Login salah 5 kali untuk satu username menguncinya 15 menit. Password bisa diganti sendiri di **Akun & perangkat**; `passwd` di server untuk yang lupa password. Data tiap akun terpisah penuh (transaksi, aset, budget, aturan, kategori buatan sendiri). `adduser` juga mencetak API token untuk akun itu (dipakai Hermes/script); token tambahan: `money-manager token <nama>`. `API_TOKEN` di `.env` tetap milik akun pertama. Chat AI di web hanya untuk akun pertama. Akun lain bisa pakai Hermes lewat Telegram dengan profile Hermes sendiri (lihat `docs/hermes-email.md` bagian 8).
 
 Perubahan `.env` baru terpakai setelah `docker compose up -d --force-recreate`.
 
@@ -146,6 +146,7 @@ Semua endpoint `/api/*` butuh `Authorization: Bearer $API_TOKEN` (bertindak seba
 | `GET /api/events` | Stream SSE |
 | `POST /api/logout` | Keluar dari perangkat ini: sesinya dihapus dan cookie dibersihkan (204). Tanpa auth, aman dipanggil berulang |
 | `GET /api/me` | Akun yang login: `username`, `telegram` (`connected`, `chat_id`, `from_env`, `own_bot`, `server_bot`). Token bot tidak pernah dikirim balik |
+| `PUT /api/me/password` | `{"current","new"}` (minimal 8 karakter): ganti password dari perangkat yang login (bukan API token); perangkat lain dikeluarkan. Password lama salah ikut kunci 5x/15 menit |
 | `PUT /api/me/telegram` | `{"bot_token","chat_id"}`: hubungkan Telegram (dikirim pesan tes dulu). `bot_token` kosong = pakai bot server; dua-duanya kosong = putuskan |
 | `GET /api/sessions` | Perangkat yang sedang login: `id`, `user_agent`, `ip`, `created_at`, `last_seen`, `current` (sesi pemanggil) |
 | `DELETE /api/sessions/{id}` | Keluarkan satu perangkat (204; 404 kalau sudah tidak ada). Stream SSE-nya ikut diputus |
