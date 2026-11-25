@@ -7,7 +7,7 @@
     "dev": {
       "cache": false,
       "persistent": true,
-      "passThroughEnv": ["PORT", "DB_PATH", "API_TOKEN", "APP_PASSWORD", "SESSION_SECRET", "COOKIE_SECURE", "TELEGRAM_*", "FX_URL", "GOLD_URL"]
+      "passThroughEnv": ["PORT", "DB_PATH", "API_TOKEN", "APP_USER", "APP_PASSWORD", "SESSION_SECRET", "COOKIE_SECURE", "TELEGRAM_*", "FX_URL", "GOLD_URL"]
     }
   }
 }

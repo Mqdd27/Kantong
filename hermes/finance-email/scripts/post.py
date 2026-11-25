@@ -11,7 +11,7 @@ import sys, os, json
 from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from common import load_env, log, load_skipped, save_skipped, api, WIB
+from common import load_env, log, load_skipped, save_skipped, fetched, api, WIB
 
 REQ = ("occurred_at", "type", "category", "source_ref")
 ORDER_REQ = ("asset", "side", "amount", "status", "order_ref", "source_ref")
@@ -27,7 +27,13 @@ def main():
         return
 
     now = datetime.now(WIB).isoformat(timespec="seconds")
-    skip = [s for s in payload.get("skip", []) if isinstance(s, str) and s]
+    def ours(ref):
+        if fetched(ref):
+            return True
+        log(f"POST {ref}: not handed out by this profile's fetch, ignored")
+        return False
+
+    skip = [s for s in payload.get("skip", []) if isinstance(s, str) and s and ours(s)]
     if skip:
         sk = load_skipped()
         for s in skip:
@@ -56,6 +62,8 @@ def main():
         if miss:
             log(f"POST skip invalid tx ref={t.get('source_ref')} missing={miss}")
             continue
+        if not ours(t["source_ref"]):
+            continue
         try:
             st, body = api(env, "POST", "/api/transactions", t)
         except Exception as e:
@@ -79,6 +87,8 @@ def main():
         miss = [k for k in ORDER_REQ if not o.get(k)]
         if miss:
             log(f"ORDER skip invalid ref={o.get('order_ref')} missing={miss}")
+            continue
+        if not ours(o["source_ref"]):
             continue
         try:
             st, body = (404, None)

@@ -10,14 +10,14 @@ metadata:
 # finance-assets
 
 Reads a portfolio screenshot the user sends and creates/updates assets in Kantong.
-Config comes from `~/.hermes/.env`: `FINANCE_API_URL`, `FINANCE_API_TOKEN` (same as finance-email). Never print the token.
+Config comes from the `.env` of this skill's Hermes profile (`~/.hermes/.env` in the default profile): `FINANCE_API_URL`, `FINANCE_API_TOKEN` (same as finance-email). Never print the token.
 
 ## Steps
 1. List current assets (compact JSON, one per line):
-   `python3 ~/.hermes/skills/finance-assets/scripts/assets.py`
+   `python3 ${HERMES_SKILL_DIR}/scripts/assets.py`
 2. Read the screenshot and build one object per product. Match an existing asset by name (same series/product, case-insensitive) and include its `id` to update it; no match → no `id` (creates one).
 3. Show the user what you will write (name, values, new vs update) and wait for "ok". Then apply:
-   `echo '{"assets":[{...}]}' | python3 ~/.hermes/skills/finance-assets/scripts/assets.py apply`
+   `echo '{"assets":[{...}]}' | python3 ${HERMES_SKILL_DIR}/scripts/assets.py apply`
    It PATCHes (only the fields you send) or POSTs, and prints one result line per asset. Reply with those lines.
 
 ## Fields

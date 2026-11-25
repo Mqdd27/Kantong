@@ -33,24 +33,30 @@ var migrationsFS embed.FS
 var wib = time.FixedZone("WIB", 7*3600)
 
 type config struct {
-	port, dbPath, apiToken, appPassword, sessionSecret, fxURL, goldURL string
-	tgAPI, tgToken, tgChat                                             string // Telegram notifications; off when token/chat empty
-	insecureCookie                                                     bool   // COOKIE_SECURE=false: allow login over plain HTTP (no PWA install/push then)
-	hermesURL, hermesKey, chatModels                                   string // AI chat via Hermes; off when the URL is empty
+	port, dbPath, apiToken, appUser, appPassword, sessionSecret, fxURL, goldURL string // appUser/appPassword: first account only
+	tgAPI, tgToken, tgChat                                                      string // Telegram notifications; off when token/chat empty
+	insecureCookie                                                              bool   // COOKIE_SECURE=false: allow login over plain HTTP (no PWA install/push then)
+	hermesURL, hermesKey, chatModels                                            string // AI chat via Hermes; off when the URL is empty
 }
 
 type app struct {
-	cfg config
-	db  *sql.DB
-	hub *hub
+	cfg     config
+	db      *sql.DB
+	hub     *hub
+	ownerID int64 // first user; API_TOKEN calls act as this user
+	logins  limiter
 }
 
 func main() {
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, nil)))
+	if len(os.Args) > 1 {
+		os.Exit(cli(os.Args[1:]))
+	}
 	cfg := config{
 		port:           env("PORT", "8080"),
 		dbPath:         env("DB_PATH", "/data/money.db"),
 		apiToken:       os.Getenv("API_TOKEN"),
+		appUser:        os.Getenv("APP_USER"),
 		appPassword:    os.Getenv("APP_PASSWORD"),
 		sessionSecret:  os.Getenv("SESSION_SECRET"),
 		insecureCookie: os.Getenv("COOKIE_SECURE") == "false",
@@ -63,8 +69,8 @@ func main() {
 		hermesKey:      os.Getenv("HERMES_API_KEY"),
 		chatModels:     os.Getenv("CHAT_MODELS"),
 	}
-	if cfg.apiToken == "" || cfg.appPassword == "" || len(cfg.sessionSecret) < 32 {
-		slog.Error("API_TOKEN, APP_PASSWORD and SESSION_SECRET (>=32 chars) are required")
+	if cfg.apiToken == "" || len(cfg.sessionSecret) < 32 {
+		slog.Error("API_TOKEN and SESSION_SECRET (>=32 chars) are required")
 		os.Exit(1)
 	}
 	a, err := newApp(cfg)
@@ -105,7 +111,20 @@ func env(k, def string) string {
 }
 
 func newApp(cfg config) (*app, error) {
-	dsn := "file:" + cfg.dbPath + "?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(ON)&_pragma=synchronous(NORMAL)&_txlock=immediate"
+	db, err := openDB(cfg.dbPath)
+	if err != nil {
+		return nil, err
+	}
+	owner, err := bootstrapUsers(db, cfg.appUser, cfg.appPassword)
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+	return &app{cfg: cfg, db: db, hub: newHub(), ownerID: owner}, nil
+}
+
+func openDB(path string) (*sql.DB, error) {
+	dsn := "file:" + path + "?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(ON)&_pragma=synchronous(NORMAL)&_txlock=immediate"
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err
@@ -114,7 +133,7 @@ func newApp(cfg config) (*app, error) {
 		db.Close()
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
-	return &app{cfg: cfg, db: db, hub: newHub()}, nil
+	return db, nil
 }
 
 func migrate(db *sql.DB) error {
@@ -194,6 +213,8 @@ func (a *app) routes() http.Handler {
 	api.HandleFunc("GET /api/chat/{id}", a.getChatSession)
 	api.HandleFunc("DELETE /api/chat/{id}", a.deleteChatSession)
 	api.HandleFunc("POST /api/insight", a.postInsight)
+	api.HandleFunc("GET /api/me", a.getMe)
+	api.HandleFunc("PUT /api/me/telegram", a.setTelegram)
 	api.HandleFunc("GET /api/sessions", a.listSessions)
 	api.HandleFunc("DELETE /api/sessions/{id}", a.deleteSession)
 	api.HandleFunc("POST /api/sessions/revoke", a.revokeSessions)

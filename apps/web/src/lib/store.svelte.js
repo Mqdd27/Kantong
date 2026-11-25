@@ -239,8 +239,8 @@ export async function deleteTx(id) {
   }
 }
 
-export async function login(password) {
-  await api('/login', { method: 'POST', body: { password } })
+export async function login(username, password) {
+  await api('/login', { method: 'POST', body: { username, password } })
   s.authed = true
 }
 
@@ -252,6 +252,11 @@ export async function logout() {
     fail(e)
   }
 }
+
+// ---- account ----
+export const loadMe = () => api('/me').catch((e) => (fail(e), null))
+/** Connects (or with empty values disconnects) this account's Telegram bot. Returns the new /me, or throws the server's message. */
+export const saveTelegram = (bot_token, chat_id) => api('/me/telegram', { method: 'PUT', body: { bot_token, chat_id } })
 
 // ---- devices (login sessions) ----
 export const loadSessions = () => api('/sessions').catch((e) => (fail(e), []))

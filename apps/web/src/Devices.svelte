@@ -1,5 +1,5 @@
 <script>
-  import { loadSessions, endSession, revokeOthers, logout, deviceName, deviceIcon, fmtShort } from './lib/store.svelte.js'
+  import { loadSessions, endSession, revokeOthers, logout, deviceName, deviceIcon, fmtShort, loadMe, saveTelegram } from './lib/store.svelte.js'
   import PageHead from './PageHead.svelte'
   import Icon from './Icon.svelte'
 
@@ -17,6 +17,26 @@
     busy = false
   }
   const seen = (x) => fmtShort.format(new Date(x.last_seen))
+
+  let me = $state(null)
+  loadMe().then((m) => (me = m))
+  let editing = $state(false)
+  let botToken = $state('')
+  let chatId = $state('')
+  let tgError = $state('')
+  async function connect(e, token = botToken.trim(), chat = chatId.trim()) {
+    e?.preventDefault()
+    busy = true
+    tgError = ''
+    try {
+      me = await saveTelegram(token, chat)
+      editing = false
+      botToken = chatId = ''
+    } catch (err) {
+      tgError = err.message
+    }
+    busy = false
+  }
 </script>
 
 {#snippet device(x)}
@@ -28,7 +48,50 @@
   </span>
 {/snippet}
 
-<PageHead title="Perangkat" />
+<PageHead title="Akun & perangkat" />
+
+{#if me}
+  <h2 class="sec">Akun</h2>
+  <section class="card list">
+    <div class="row"><span class="main"><b>{me.username}</b><span class="muted">Password diganti dari server: money-manager passwd {me.username}</span></span></div>
+  </section>
+
+  <h2 class="sec">Notifikasi Telegram</h2>
+  <section class="card list">
+    {#if editing}
+      <form class="tg" onsubmit={connect}>
+        {#if me.telegram.server_bot}
+          <p class="muted">Cukup isi chat ID: notifikasi dikirim lewat bot Kantong di server. Token bot hanya kalau mau pakai bot sendiri.</p>
+        {/if}
+        <label>Chat ID <input bind:value={chatId} inputmode="numeric" placeholder="mis. 123456789 (dari @userinfobot)" autocomplete="off" required /></label>
+        <label>Token bot{me.telegram.server_bot ? ' (opsional)' : ''} <input bind:value={botToken} placeholder="123456:ABC… dari @BotFather" autocomplete="off" spellcheck="false" required={!me.telegram.server_bot} /></label>
+        <p class="muted">Tekan Start di chat dengan bot-nya dulu. Kantong mengirim pesan tes sebelum menyimpan.</p>
+        {#if tgError}<p class="err" role="alert">{tgError}</p>{/if}
+        <div class="btns">
+          <button type="button" onclick={() => ((editing = false), (tgError = ''))}>Batal</button>
+          <button class="primary" disabled={busy}>Hubungkan</button>
+        </div>
+      </form>
+    {:else}
+      <div class="row">
+        <span class="main">
+          <b>{me.telegram.connected ? 'Terhubung' : 'Belum terhubung'}</b>
+          <span class="muted">
+            {#if me.telegram.from_env}Bot dari .env server, chat {me.telegram.chat_id}
+            {:else if me.telegram.connected && me.telegram.own_bot}Bot kamu sendiri, chat {me.telegram.chat_id}
+            {:else if me.telegram.connected}Bot Kantong di server, chat {me.telegram.chat_id}
+            {:else}Transaksi dari email tidak dikirim ke Telegram{/if}
+          </span>
+        </span>
+        {#if me.telegram.connected && !me.telegram.from_env}
+          <button class="danger" disabled={busy} onclick={() => connect(null, '', '')}>Putuskan</button>
+        {/if}
+        <button onclick={() => (editing = true)}>{me.telegram.connected && !me.telegram.from_env ? 'Ganti' : 'Hubungkan bot'}</button>
+      </div>
+      {#if tgError}<p class="err" role="alert">{tgError}</p>{/if}
+    {/if}
+  </section>
+{/if}
 
 <h2 class="sec">Perangkat ini</h2>
 <section class="card list">
@@ -50,7 +113,7 @@
     {/if}
   {/if}
 </section>
-<p class="muted note">Token API (Hermes, script) tidak ikut keluar. Ganti API_TOKEN di .env untuk memutusnya.</p>
+<p class="muted note">Token API (Hermes, script) tidak ikut keluar.</p>
 
 <h2 class="sec">Sesi aktif lain</h2>
 <section class="card list">
@@ -107,5 +170,28 @@
   }
   .note {
     margin: 6px 4px 0;
+  }
+  .tg {
+    display: grid;
+    gap: 10px;
+    padding: 12px 0;
+  }
+  .tg label {
+    display: grid;
+    gap: 4px;
+    font-size: 14px;
+  }
+  .tg p {
+    margin: 0;
+  }
+  .btns {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+  .err {
+    color: var(--out);
+    font-size: 14px;
+    margin: 4px 0;
   }
 </style>

@@ -76,7 +76,7 @@ sed -i "s/^SESSION_SECRET=.*/SESSION_SECRET=$(openssl rand -hex 32)/" .env
 
 Then:
 
-- **`APP_PASSWORD`** (the login password for the web app): ask the human to set it with `nano /opt/Kantong/.env`.
+- **`APP_USER` / `APP_PASSWORD`** (the first web app login): ask the human to set both with `nano /opt/Kantong/.env`. On first start the password is stored as a hash in the database; after that `APP_PASSWORD` is ignored and can be removed.
 - **`HOST_BIND`:** keep `127.0.0.1` when a reverse proxy or tunnel on the same server fronts the app. Set it to the server's Tailscale IP only if the phone will connect directly over the tailnet.
 - **`COOKIE_SECURE`:** keep `true` (HTTPS). Set it to `false` only for a temporary plain-HTTP test.
 
@@ -89,7 +89,7 @@ curl -s "http://$HOST_BIND:$HOST_PORT/healthz"        # -> ok
 curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $API_TOKEN" "http://$HOST_BIND:$HOST_PORT/api/categories"   # -> 200
 ```
 
-**Check:** `ok`, then `200`. `grep -c '^\(API_TOKEN\|SESSION_SECRET\|APP_PASSWORD\)=.\+' .env` prints `3`.
+**Check:** `ok`, then `200`. `grep -c '^\(API_TOKEN\|SESSION_SECRET\|APP_PASSWORD\)=.\+' .env` prints `3`. `docker logs kantong-money-1 | grep 'created first user'` shows the username.
 
 ---
 
@@ -103,7 +103,7 @@ Use the option the human picked in Phase 0. Ask before changing DNS or the tunne
 | Cloudflare Tunnel | Add a public hostname to the tunnel pointing to `http://127.0.0.1:8080`. |
 | Caddy | `kantong.example.com { reverse_proxy 127.0.0.1:8080 }` |
 
-**Check:** ask the human to open the HTTPS URL on their phone, log in with `APP_PASSWORD`, and use "Add to Home Screen". The login must succeed. If it loops back to the login page over HTTP, `COOKIE_SECURE` is the cause.
+**Check:** ask the human to open the HTTPS URL on their phone, log in with `APP_USER` and `APP_PASSWORD`, and use "Add to Home Screen". The login must succeed. If it loops back to the login page over HTTP, `COOKIE_SECURE` is the cause.
 
 ---
 
@@ -200,7 +200,7 @@ Kantong already keeps 14 daily backups inside its volume. To also keep a copy on
 
 Finish with a short report to the human:
 
-- PWA URL, plus where `APP_PASSWORD` lives (`/opt/Kantong/.env`). Don't print the password itself.
+- PWA URL and the login username. Don't print the password. More accounts: `docker compose exec money /money-manager adduser <name>`.
 - What runs automatically: the email cron every 10 minutes, daily backups at 03:00 WIB.
 - Which banks are covered, and which are still unverified.
 - How to update: `cd /opt/Kantong && git pull && docker compose up -d --build`

@@ -72,7 +72,7 @@ func scanOrder(s scanner) (Order, error) {
 }
 
 // Clients refetch /api/assets on this event, which also refreshes today's snapshot.
-func (a *app) assetsChanged() { a.hub.publish("assets.changed", map[string]any{}) }
+func (a *app) assetsChanged(uid int64) { a.hub.publish(uid, "assets.changed", map[string]any{}) }
 
 func validAsset(w http.ResponseWriter, x *Asset) bool {
 	x.Name, x.Note = strings.TrimSpace(x.Name), strings.TrimSpace(x.Note)
@@ -120,9 +120,9 @@ type portfolio struct {
 }
 
 // portfolio values every asset in IDR and records today's snapshot for the performance chart.
-func (a *app) portfolio(ctx context.Context) (p portfolio, err error) {
+func (a *app) portfolio(ctx context.Context, uid int64) (p portfolio, err error) {
 	p.Assets, p.Pending, p.MissingRates = []Asset{}, []Order{}, []string{}
-	rows, err := a.db.QueryContext(ctx, `SELECT `+assetCols+` FROM assets ORDER BY kind, name`)
+	rows, err := a.db.QueryContext(ctx, `SELECT `+assetCols+` FROM assets WHERE user_id = ? ORDER BY kind, name`, uid)
 	if err != nil {
 		return p, err
 	}
@@ -138,11 +138,11 @@ func (a *app) portfolio(ctx context.Context) (p portfolio, err error) {
 
 	for i := range p.Assets {
 		x := &p.Assets[i]
-		if x.Balance, err = a.liveBalance(ctx, *x); err != nil {
+		if x.Balance, err = a.liveBalance(ctx, uid, *x); err != nil {
 			return p, err
 		}
 		if x.DueDay != nil && liabilityKinds[x.Kind] {
-			if err = a.dueStatus(ctx, x, time.Now().In(wib)); err != nil {
+			if err = a.dueStatus(ctx, uid, x, time.Now().In(wib)); err != nil {
 				return p, err
 			}
 		}
@@ -165,7 +165,7 @@ func (a *app) portfolio(ctx context.Context) (p portfolio, err error) {
 	}
 
 	orows, err := a.db.QueryContext(ctx, `SELECT `+orderCols+` FROM asset_orders o JOIN assets a ON a.id = o.asset_id
-		WHERE o.status = 'pending' ORDER BY o.occurred_at DESC`)
+		WHERE o.user_id = ? AND o.status = 'pending' ORDER BY o.occurred_at DESC`, uid)
 	if err != nil {
 		return p, err
 	}
@@ -179,14 +179,14 @@ func (a *app) portfolio(ctx context.Context) (p portfolio, err error) {
 	}
 
 	if len(p.Assets) > 0 && len(p.MissingRates) == 0 { // a partial total would show a fake dip
-		_, err = a.db.ExecContext(ctx, `INSERT OR REPLACE INTO asset_snapshots (date, total_idr, invested_idr) VALUES (?, ?, ?)`,
-			time.Now().In(wib).Format(time.DateOnly), p.TotalIDR, p.InvestedIDR)
+		_, err = a.db.ExecContext(ctx, `INSERT OR REPLACE INTO asset_snapshots (user_id, date, total_idr, invested_idr) VALUES (?, ?, ?, ?)`,
+			uid, time.Now().In(wib).Format(time.DateOnly), p.TotalIDR, p.InvestedIDR)
 	}
 	return p, err
 }
 
 func (a *app) listAssets(w http.ResponseWriter, r *http.Request) {
-	p, err := a.portfolio(r.Context())
+	p, err := a.portfolio(r.Context(), userID(r))
 	if err != nil {
 		a.fail(w, err)
 		return
@@ -195,7 +195,7 @@ func (a *app) listAssets(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *app) assetHistory(w http.ResponseWriter, r *http.Request) {
-	rows, err := a.db.Query(`SELECT date, total_idr, invested_idr FROM asset_snapshots ORDER BY date`)
+	rows, err := a.db.Query(`SELECT date, total_idr, invested_idr FROM asset_snapshots WHERE user_id = ? ORDER BY date`, userID(r))
 	if err != nil {
 		a.fail(w, err)
 		return
@@ -218,12 +218,15 @@ func (a *app) assetHistory(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-// snapshotLoop hourly records a net worth snapshot (so days without visits get a point) and posts due recurring items.
+// snapshotLoop hourly records each account's net worth snapshot (so days without visits get a point)
+// and posts due recurring items.
 func (a *app) snapshotLoop(ctx context.Context) {
 	for {
 		a.postDue(ctx)
-		if _, err := a.portfolio(ctx); err != nil && ctx.Err() == nil {
-			slog.Error("snapshot", "err", err)
+		for _, uid := range a.userIDs() {
+			if _, err := a.portfolio(ctx, uid); err != nil && ctx.Err() == nil {
+				slog.Error("snapshot", "user", uid, "err", err)
+			}
 		}
 		select {
 		case <-ctx.Done():
@@ -238,8 +241,9 @@ func (a *app) createAsset(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &x) || !validAsset(w, &x) {
 		return
 	}
-	res, err := a.db.Exec(`INSERT INTO assets (name, kind, currency, balance, invested, note, target, target_date, return_pct, maturity, payout, face, due_day) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		x.Name, x.Kind, x.Currency, x.Balance, x.Invested, x.Note, x.Target, x.TargetDate, x.ReturnPct, x.Maturity, x.Payout, x.Face, x.DueDay)
+	uid := userID(r)
+	res, err := a.db.Exec(`INSERT INTO assets (user_id, name, kind, currency, balance, invested, note, target, target_date, return_pct, maturity, payout, face, due_day) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		uid, x.Name, x.Kind, x.Currency, x.Balance, x.Invested, x.Note, x.Target, x.TargetDate, x.ReturnPct, x.Maturity, x.Payout, x.Face, x.DueDay)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
 			writeErr(w, http.StatusConflict, "asset name already exists")
@@ -249,7 +253,7 @@ func (a *app) createAsset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	x.ID, _ = res.LastInsertId()
-	a.assetsChanged()
+	a.assetsChanged(uid)
 	writeJSON(w, http.StatusCreated, x)
 }
 
@@ -258,7 +262,8 @@ func (a *app) patchAsset(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	x, err := scanAsset(a.db.QueryRow(`SELECT `+assetCols+` FROM assets WHERE id = ?`, id))
+	uid := userID(r)
+	x, err := scanAsset(a.db.QueryRow(`SELECT `+assetCols+` FROM assets WHERE id = ? AND user_id = ?`, id, uid))
 	if errors.Is(err, sql.ErrNoRows) {
 		writeErr(w, http.StatusNotFound, "not found")
 		return
@@ -266,7 +271,7 @@ func (a *app) patchAsset(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, err)
 		return
 	}
-	if x.Balance, err = a.liveBalance(r.Context(), x); err != nil { // the save becomes the new anchor
+	if x.Balance, err = a.liveBalance(r.Context(), uid, x); err != nil { // the save becomes the new anchor
 		a.fail(w, err)
 		return
 	}
@@ -278,8 +283,8 @@ func (a *app) patchAsset(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().UTC().Truncate(time.Second)
 	x.UpdatedAt = now.Format(time.RFC3339)
 	_, err = a.db.Exec(`UPDATE assets SET name = ?, kind = ?, currency = ?, balance = ?, invested = ?, note = ?, target = ?, target_date = ?,
-		return_pct = ?, maturity = ?, payout = ?, face = ?, due_day = ?, updated_at = ? WHERE id = ?`,
-		x.Name, x.Kind, x.Currency, x.Balance, x.Invested, x.Note, x.Target, x.TargetDate, x.ReturnPct, x.Maturity, x.Payout, x.Face, x.DueDay, x.UpdatedAt, id)
+		return_pct = ?, maturity = ?, payout = ?, face = ?, due_day = ?, updated_at = ? WHERE id = ? AND user_id = ?`,
+		x.Name, x.Kind, x.Currency, x.Balance, x.Invested, x.Note, x.Target, x.TargetDate, x.ReturnPct, x.Maturity, x.Payout, x.Face, x.DueDay, x.UpdatedAt, id, uid)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
 			writeErr(w, http.StatusConflict, "asset name already exists")
@@ -289,18 +294,18 @@ func (a *app) patchAsset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	x.ID = id
-	if err := a.adjust(x, tracked, now); err != nil {
+	if err := a.adjust(uid, x, tracked, now); err != nil {
 		a.fail(w, err)
 		return
 	}
-	a.assetsChanged()
+	a.assetsChanged(uid)
 	writeJSON(w, http.StatusOK, x)
 }
 
 // adjust records the gap between the tracked and the newly entered balance of a cash account or debt
 // (interest, admin fees, spending without an email) as a "Penyesuaian" transaction in Review,
 // so the user can give it a real category. It sits exactly on the new anchor, so it doesn't move the balance again.
-func (a *app) adjust(x Asset, tracked float64, at time.Time) error {
+func (a *app) adjust(uid int64, x Asset, tracked float64, at time.Time) error {
 	diff := int64(math.Round(x.Balance - tracked))
 	if diff == 0 || x.Currency != "IDR" || (x.Kind != "bank" && x.Kind != "ewallet" && x.Kind != "cash" && !liabilityKinds[x.Kind]) {
 		return nil
@@ -311,7 +316,7 @@ func (a *app) adjust(x Asset, tracked float64, at time.Time) error {
 	if diff < 0 {
 		t.Amount, t.Type = -diff, "out"
 	}
-	return a.insertTx(&t)
+	return a.insertTx(uid, &t)
 }
 
 // assetActivity is an asset's history, newest first: transactions booked to (or transferred into)
@@ -322,7 +327,8 @@ func (a *app) assetActivity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var name string
-	if err := a.db.QueryRow(`SELECT name FROM assets WHERE id = ?`, id).Scan(&name); errors.Is(err, sql.ErrNoRows) {
+	uid := userID(r)
+	if err := a.db.QueryRow(`SELECT name FROM assets WHERE id = ? AND user_id = ?`, id, uid).Scan(&name); errors.Is(err, sql.ErrNoRows) {
 		writeErr(w, http.StatusNotFound, "not found")
 		return
 	} else if err != nil {
@@ -334,8 +340,8 @@ func (a *app) assetActivity(w http.ResponseWriter, r *http.Request) {
 		Orders       []Order `json:"orders"`
 	}{[]Tx{}, []Order{}}
 	// ponytail: last 200 only, add paging when an account outgrows it
-	rows, err := a.db.Query(`SELECT `+txCols+` FROM transactions WHERE lower(trim(account)) = lower(?1) OR lower(to_account) = lower(?1)
-		ORDER BY occurred_at DESC, id DESC LIMIT 200`, strings.TrimSpace(name))
+	rows, err := a.db.Query(`SELECT `+txCols+` FROM transactions WHERE user_id = ?2 AND (lower(trim(account)) = lower(?1) OR lower(to_account) = lower(?1))
+		ORDER BY occurred_at DESC, id DESC LIMIT 200`, strings.TrimSpace(name), uid)
 	if err != nil {
 		a.fail(w, err)
 		return
@@ -372,7 +378,8 @@ func (a *app) deleteAsset(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	res, err := a.db.Exec(`DELETE FROM assets WHERE id = ?`, id)
+	uid := userID(r)
+	res, err := a.db.Exec(`DELETE FROM assets WHERE id = ? AND user_id = ?`, id, uid)
 	if err != nil {
 		a.fail(w, err)
 		return
@@ -381,7 +388,7 @@ func (a *app) deleteAsset(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "not found")
 		return
 	}
-	a.assetsChanged()
+	a.assetsChanged(uid)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -394,7 +401,7 @@ func dueOn(now time.Time, day, months int) time.Time {
 
 // dueStatus sets the next due date of a debt and whether the last one was missed:
 // it has passed, the account still owes, and nothing was paid into it since the due date before.
-func (a *app) dueStatus(ctx context.Context, x *Asset, now time.Time) error {
+func (a *app) dueStatus(ctx context.Context, uid int64, x *Asset, now time.Time) error {
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, wib)
 	due := dueOn(now, *x.DueDay, 0)
 	if !today.After(due) {
@@ -406,8 +413,8 @@ func (a *app) dueStatus(ctx context.Context, x *Asset, now time.Time) error {
 		return nil
 	}
 	var paid int
-	err := a.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM transactions WHERE type = 'transfer' AND lower(to_account) = lower(?)
-		AND needs_review = 0 AND substr(occurred_at, 1, 10) > ?`, strings.TrimSpace(x.Name), dueOn(now, *x.DueDay, -1).Format(time.DateOnly)).Scan(&paid)
+	err := a.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM transactions WHERE user_id = ? AND type = 'transfer' AND lower(to_account) = lower(?)
+		AND needs_review = 0 AND substr(occurred_at, 1, 10) > ?`, uid, strings.TrimSpace(x.Name), dueOn(now, *x.DueDay, -1).Format(time.DateOnly)).Scan(&paid)
 	x.Overdue = paid == 0
 	return err
 }
@@ -416,14 +423,14 @@ func (a *app) dueStatus(ctx context.Context, x *Asset, now time.Time) error {
 // after the balance was last saved, so a bank asset follows spending without manual updates.
 // in adds, out subtracts, a transfer subtracts from account and adds to to_account.
 // Transactions still waiting in Review don't count until approved.
-func (a *app) liveBalance(ctx context.Context, x Asset) (float64, error) {
+func (a *app) liveBalance(ctx context.Context, uid int64, x Asset) (float64, error) {
 	var d float64
 	err := a.db.QueryRowContext(ctx, `SELECT COALESCE(SUM(
 		(CASE WHEN type = 'in' THEN 1 WHEN lower(trim(account)) = ?1 THEN -1 ELSE 0 END
 		 + CASE WHEN type = 'transfer' AND lower(to_account) = ?1 THEN 1 ELSE 0 END)
 		* CASE WHEN currency = 'IDR' THEN amount ELSE orig_amount END), 0)
-		FROM transactions WHERE (lower(trim(account)) = ?1 OR lower(to_account) = ?1) AND currency = ?2 AND needs_review = 0
-		AND julianday(occurred_at) > julianday(?3)`, strings.ToLower(strings.TrimSpace(x.Name)), x.Currency, x.UpdatedAt).Scan(&d)
+		FROM transactions WHERE user_id = ?4 AND (lower(trim(account)) = ?1 OR lower(to_account) = ?1) AND currency = ?2 AND needs_review = 0
+		AND julianday(occurred_at) > julianday(?3)`, strings.ToLower(strings.TrimSpace(x.Name)), x.Currency, x.UpdatedAt, uid).Scan(&d)
 	return x.Balance + d, err
 }
 
@@ -489,7 +496,8 @@ func (a *app) createOrder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var existing int64
-	if a.db.QueryRow(`SELECT id FROM asset_orders WHERE order_ref = ?`, b.OrderRef).Scan(&existing) == nil {
+	uid := userID(r)
+	if a.db.QueryRow(`SELECT id FROM asset_orders WHERE user_id = ? AND order_ref = ?`, uid, b.OrderRef).Scan(&existing) == nil {
 		writeJSON(w, http.StatusConflict, map[string]any{"error": "duplicate order_ref", "id": existing})
 		return
 	}
@@ -501,13 +509,13 @@ func (a *app) createOrder(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 	var assetID int64
-	err = tx.QueryRow(`SELECT id FROM assets WHERE name = ? COLLATE NOCASE`, b.Asset).Scan(&assetID)
+	err = tx.QueryRow(`SELECT id FROM assets WHERE user_id = ? AND name = ? COLLATE NOCASE`, uid, b.Asset).Scan(&assetID)
 	if errors.Is(err, sql.ErrNoRows) {
 		x := Asset{Name: b.Asset, Kind: b.Kind, Currency: b.Currency}
 		if !validAsset(w, &x) {
 			return
 		}
-		res, err := tx.Exec(`INSERT INTO assets (name, kind, currency) VALUES (?, ?, ?)`, x.Name, x.Kind, x.Currency)
+		res, err := tx.Exec(`INSERT INTO assets (user_id, name, kind, currency) VALUES (?, ?, ?, ?)`, uid, x.Name, x.Kind, x.Currency)
 		if err != nil {
 			a.fail(w, err)
 			return
@@ -517,8 +525,8 @@ func (a *app) createOrder(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, err)
 		return
 	}
-	res, err := tx.Exec(`INSERT INTO asset_orders (asset_id, side, amount, status, order_ref, source_ref, note, occurred_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, assetID, b.Side, b.Amount, b.Status, b.OrderRef, b.SourceRef, b.Note, ts.In(wib).Format(time.RFC3339))
+	res, err := tx.Exec(`INSERT INTO asset_orders (user_id, asset_id, side, amount, status, order_ref, source_ref, note, occurred_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, uid, assetID, b.Side, b.Amount, b.Status, b.OrderRef, b.SourceRef, b.Note, ts.In(wib).Format(time.RFC3339))
 	if err != nil {
 		a.fail(w, err)
 		return
@@ -534,7 +542,7 @@ func (a *app) createOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id, _ := res.LastInsertId()
-	a.assetsChanged()
+	a.assetsChanged(uid)
 	writeJSON(w, http.StatusCreated, map[string]any{"id": id, "asset_id": assetID})
 }
 
@@ -557,7 +565,8 @@ func (a *app) patchOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback()
-	o, err := scanOrder(tx.QueryRow(`SELECT `+orderCols+` FROM asset_orders o JOIN assets a ON a.id = o.asset_id WHERE o.order_ref = ?`, ref))
+	uid := userID(r)
+	o, err := scanOrder(tx.QueryRow(`SELECT `+orderCols+` FROM asset_orders o JOIN assets a ON a.id = o.asset_id WHERE o.user_id = ? AND o.order_ref = ?`, uid, ref))
 	if errors.Is(err, sql.ErrNoRows) {
 		writeErr(w, http.StatusNotFound, "unknown order_ref")
 		return
@@ -588,7 +597,7 @@ func (a *app) patchOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	o.Status = b.Status
-	a.assetsChanged()
+	a.assetsChanged(uid)
 	writeJSON(w, http.StatusOK, o)
 }
 
