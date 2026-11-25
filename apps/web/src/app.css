@@ -17,11 +17,8 @@
   --radius: 16px;
   --shadow: 0 1px 2px rgb(16 24 40 / 0.05), 0 2px 10px rgb(16 24 40 / 0.04);
   /* the green balance card: text and states on the brand color */
-  --hero-text: #ffffff;
-  --hero-muted: rgb(255 255 255 / 0.85);
-  --hero-track: rgb(255 255 255 / 0.22);
-  --hero-warn: #ffe0a3;
-  --hero-out: #ffdcd4;
+  --kcard: #f4f4f2; /* spending card base, before it takes on colour */
+  --kcard-mix: white; /* category colours are softened toward this */
   /* category and asset-kind hues: icon on a 15% tint, >=3.8:1 */
   --h-orange: #c4501a;
   --h-amber: #9e6200;
@@ -59,11 +56,8 @@
     --series-1: #3987e5;
     --series-2: #d95926;
     --shadow: none;
-    --hero-text: #0c1f1a;
-    --hero-muted: rgb(12 31 26 / 0.82);
-    --hero-track: rgb(12 31 26 / 0.18);
-    --hero-warn: #4a2f00;
-    --hero-out: #6b1408;
+    --kcard: #232428;
+    --kcard-mix: black;
     --h-orange: #f28a52;
     --h-amber: #e0aa44;
     --h-blue: #6aa1f2;

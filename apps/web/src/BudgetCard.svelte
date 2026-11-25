@@ -2,8 +2,8 @@
   import { s, fmtIDR } from './lib/store.svelte.js'
   import Icon from './Icon.svelte'
 
-  /** compact: Home version with a link to the Budget page; hero: sits on the green balance card */
-  let { compact = false, hero = false } = $props()
+  /** compact: Home version: link to the Budget page, one status line, no legend */
+  let { compact = false } = $props()
 
   const b = $derived(s.budget)
   const limit = $derived(b?.overall ?? 0)
@@ -22,7 +22,7 @@
   const daily = $derived(b?.days_left && left > 0 ? left / b.days_left : 0)
 </script>
 
-<section class="bc {state}" class:card={!hero} class:hero>
+<section class="bc card {state}">
   {#if !b}
     <p class="muted">Memuat budget…</p>
   {:else if !limit}
@@ -41,17 +41,24 @@
       <span class="up grow" style:width="{Math.max(0, pct(b.spent + b.upcoming_total) - pct(b.spent))}%"></span>
       {#if elapsed != null}<i class="marker grow" style:left="{elapsed}%" title="Hari ini"></i>{/if}
     </div>
-    <div class="legend">
-      <span><i class="k spent"></i>Terpakai {fmtIDR.format(b.spent)}</span>
-      {#if b.upcoming_total}<span><i class="k up"></i>Tagihan {fmtIDR.format(b.upcoming_total)}</span>{/if}
-      <span>Budget {fmtIDR.format(limit)}</span>
-    </div>
+    {#if compact}
+      <div class="legend">
+        {#if b.upcoming_total}<span><i class="k up"></i>Tagihan {fmtIDR.format(b.upcoming_total)}</span>{/if}
+        <span class="end">dari {fmtIDR.format(limit)}</span>
+      </div>
+    {:else}
+      <div class="legend">
+        <span><i class="k spent"></i>Terpakai {fmtIDR.format(b.spent)}</span>
+        {#if b.upcoming_total}<span><i class="k up"></i>Tagihan {fmtIDR.format(b.upcoming_total)}</span>{/if}
+        <span>Budget {fmtIDR.format(limit)}</span>
+      </div>
+    {/if}
     {#if state === 'warn'}
       <p class="status"><Icon name="alert" size={16} />{used >= 90 ? `Sudah ${Math.round(used)}% terpakai` : 'Pengeluaran lebih cepat dari jadwal'}</p>
     {:else if state === 'over'}
       <p class="status"><Icon name="alert" size={16} />Lewat budget {fmtIDR.format(-left)}</p>
     {/if}
-    {#if daily}
+    {#if daily && !(compact && state !== 'ok')}
       <p class="muted small">Jatah per hari <b>{fmtIDR.format(Math.floor(daily))}</b> · {b.days_left} hari lagi</p>
     {/if}
   {/if}
@@ -61,20 +68,6 @@
   .bc {
     display: grid;
     gap: 8px;
-  }
-  /* on the brand-colored card: re-point the tokens this card reads */
-  .hero {
-    --text: var(--hero-text);
-    --muted: var(--hero-muted);
-    --bg: var(--hero-track);
-    --line: var(--hero-muted);
-    --accent: var(--hero-text);
-    --warn: var(--hero-warn);
-    --out: var(--hero-out);
-    color: var(--text);
-  }
-  .hero .big {
-    font-size: 32px;
   }
   .row {
     display: flex;
@@ -155,6 +148,7 @@
   }
   .legend {
     display: flex;
+    justify-content: space-between;
     flex-wrap: wrap;
     gap: 4px 14px;
     font-size: 12px;

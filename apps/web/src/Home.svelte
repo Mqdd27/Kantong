@@ -7,6 +7,7 @@
   import ReviewAlert from './ReviewAlert.svelte'
   import TxRow from './TxRow.svelte'
   import BudgetCard from './BudgetCard.svelte'
+  import SpendCard from './SpendCard.svelte'
   import Icon from './Icon.svelte'
 
   let { open } = $props()
@@ -39,34 +40,18 @@
 
 <div class="home">
   <div class="stack a">
-    <section class="balance">
-      <BudgetCard compact hero />
-      <div class="flow">
-        <div><span>Masuk</span><b class="num">{fmtIDR.format(inSum)}</b></div>
-        <div><span>Keluar</span><b class="num">{fmtIDR.format(outSum)}</b></div>
-        <div><span>Selisih</span><b class="num">{fmtIDR.format(inSum - outSum)}</b></div>
-      </div>
-    </section>
+    <SpendCard spent={spend} {byCat} income={inSum} />
+    {#if s.budget?.overall}<BudgetCard compact />{/if}
 
     <ReviewAlert />
 
-    <div class="tiles">
-      <a class="card tile" href="#/assets">
-        <span class="avatar sm" style:--hue="var(--h-blue)"><Icon name="wallet" size={18} /></span>
-        <span class="lbl">{s.portfolio.assets.some((a) => a.value_idr < 0) ? 'Kekayaan bersih' : 'Total aset'}</span>
-        <b class="num">{fmtIDR.format(s.portfolio.total_idr)}</b>
-      </a>
+    {#if paid}
       <a class="card tile" href="#/analytics">
         <span class="avatar sm" style:--hue="var(--h-teal)"><Icon name="chart" size={18} /></span>
-        {#if paid}
-          <span class="lbl">Tabungan bulan ini</span>
-          <b class="num">{rate == null ? '–' : rate + '%'}</b>
-        {:else}
-          <span class="lbl">Keluar bulan ini</span>
-          <b class="num">{fmtIDR.format(spend)}</b>
-        {/if}
+        <span class="lbl">Tabungan bulan ini</span>
+        <b class="num">{rate == null ? '–' : rate + '%'}</b>
       </a>
-    </div>
+    {/if}
   </div>
 
   <div class="stack c">
@@ -135,49 +120,16 @@
       margin-top: 0;
     }
   }
-  .balance {
-    display: grid;
-    gap: 16px;
-    padding: 18px 18px 16px;
-    border-radius: 20px;
-    background: var(--accent);
-    color: var(--hero-text);
-    box-shadow: 0 8px 24px color-mix(in srgb, var(--accent) 28%, transparent);
-  }
-  .flow {
-    display: grid;
-    grid-template-columns: repeat(3, auto);
-    justify-content: space-between;
-    gap: 8px;
-    padding-top: 14px;
-    border-top: 1px solid var(--hero-track);
-  }
-  .flow div {
-    display: grid;
-    gap: 2px;
-    min-width: 0;
-  }
-  .flow span {
-    color: var(--hero-muted);
-    font-size: 12px;
-  }
-  .flow b {
-    font-size: clamp(12px, 3.6vw, 14px);
-  }
-  .tiles {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 12px;
-  }
   .tile {
-    display: grid;
-    gap: 4px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
     color: var(--text);
     text-decoration: none;
     min-width: 0;
   }
-  .tile .avatar {
-    margin-bottom: 6px;
+  .tile b {
+    margin-left: auto;
   }
   .lbl {
     color: var(--muted);
