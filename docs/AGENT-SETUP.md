@@ -194,6 +194,18 @@ Kantong sends its own short Telegram message for each transaction that comes fro
 
 Kantong already keeps 14 daily backups inside its volume. To also keep a copy on the human's own computer, offer the commands in the README's **Backup** section, including the optional `crontab` line. Ask before adding a cron job.
 
+## Phase 8b: Another person (optional, only when the human asks)
+
+Each person gets their own Kantong account. Their data is fully separate.
+
+1. `docker compose exec money /money-manager adduser <name>` prints a password and an API token. Give the password to that person privately; never paste it into a chat or log.
+2. Telegram notifications: the person opens **Akun & perangkat** in Kantong and enters their chat ID (from @userinfobot), which uses the server's bot. Optionally they paste their own bot token instead.
+3. Their bank email, receipts and chat through Hermes: one Hermes profile per person, routed from the same bot by Telegram user ID. Follow `docs/hermes-email.md` section 8. Add the `profile_routes` entry **before** adding them to `TELEGRAM_ALLOWED_USERS`; an unrouted sender lands in the first account's profile.
+
+Limits to tell the human:
+- Chat AI in the web app is for the first account only.
+- Backup is one file for all accounts, so restoring brings back everyone's data at once.
+
 ---
 
 ## Phase 9: Hand-off
