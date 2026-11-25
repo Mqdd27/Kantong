@@ -115,7 +115,7 @@ Mau mengisi aset dari screenshot portofolio juga? Lihat [hermes-assets.md](herme
 
 ## 8. Akun Kantong kedua (opsional)
 
-Tiap orang dapat **profile Hermes** sendiri. Instalasi Hermes-nya tetap satu, tapi tiap profile punya memori, `.env`, bot Telegram, dan cron sendiri. Email, foto struk, screenshot portofolio, dan chat orang itu masuk ke akun Kantong-nya sendiri, dan Hermes-nya tidak tahu apa-apa soal keuanganmu.
+Tiap orang dapat **profile Hermes** sendiri. Instalasi Hermes dan bot Telegram-nya tetap satu, tapi tiap profile punya memori, `.env`, dan cron sendiri. Bot yang sama mengarahkan pesan tiap orang ke profile-nya berdasarkan Telegram user ID. Email, foto struk, screenshot portofolio, dan chat orang itu masuk ke akun Kantong-nya sendiri, dan Hermes-nya tidak tahu apa-apa soal keuanganmu.
 
 1. Bikin akun dan token-nya di server Kantong:
    ```sh
@@ -133,15 +133,24 @@ Tiap orang dapat **profile Hermes** sendiri. Instalasi Hermes-nya tetap satu, ta
    IMAP_PASSWORD=app-password-budi
    FINANCE_FWD_FROM=                       # opsional
    FINANCE_OWNER_NAME=NAMA LENGKAP BUDI
-   API_SERVER_ENABLED=false                # port 8642 sudah dipakai profile default
+   TELEGRAM_HOME_CHANNEL=telegram-user-id-budi   # pesan cron Budi ke Budi, bukan ke kamu
    ```
    Kalau Budi mau pakai API key LLM sendiri, ganti key-nya di file ini (dan provider/model di `~/.hermes/profiles/budi/config.yaml` kalau beda).
-4. Hubungkan bot Telegram Budi (bikin di @BotFather), lalu jalankan gateway-nya:
-   ```sh
-   hermes -p budi gateway setup
-   hermes -p budi gateway install
+4. Arahkan chat Budi di bot kamu ke profile `budi`. Tambahkan ke `~/.hermes/config.yaml` (profile **default**):
+   ```yaml
+   gateway:
+     multiplex_profiles: true
+     profile_routes:
+       - name: budi
+         platform: telegram
+         user_id: "telegram-user-id-budi"   # dari @userinfobot
+         profile: budi
    ```
-   Bot yang sama boleh dipakai Budi untuk notif transaksi di Kantong (**Akun & perangkat**): Kantong cuma mengirim, Hermes yang membaca chat.
+   Tambahkan juga ID Budi ke `TELEGRAM_ALLOWED_USERS` di `~/.hermes/.env` (izin dicek oleh profile pemilik bot), lalu `hermes gateway restart`.
+
+   **Pasang route dulu, baru izinkan.** Pesan dari pengirim yang tidak punya route masuk ke profile default: memori dan akun Kantong kamu.
+
+   Untuk notif transaksi, Budi cukup isi chat ID-nya di **Akun & perangkat** di Kantong. Notifnya dikirim lewat bot dari `.env` Kantong, dan Budi tidak perlu tahu token bot-nya.
 5. Pasang wrapper dan cron email di profile Budi:
    ```sh
    cp hermes/finance-email-fetch.py ~/.hermes/profiles/budi/scripts/

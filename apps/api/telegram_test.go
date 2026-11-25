@@ -98,6 +98,32 @@ func TestTelegramPerAccount(t *testing.T) {
 	}
 	a.cfg.sessionSecret = strings.Repeat("s", 32)
 
+	// a chat id alone uses the server's bot: budi never needs its token
+	code, raw = callTok(t, srv, budi, "PUT", "/api/me/telegram", `{"bot_token":"","chat_id":"8"}`, nil)
+	if code != 200 || !strings.Contains(raw, `"chat_id":"8"`) || !strings.Contains(raw, `"own_bot":false`) || !strings.Contains(raw, `"from_env":false`) {
+		t.Fatalf("shared bot: %d %s", code, raw)
+	}
+	if m := next(); m != "/bot1:ENVENVENVENVENVENVENVENV/sendMessage|8" {
+		t.Fatalf("shared bot test message: %s", m)
+	}
+	mail(budi, "b4")
+	if m := next(); m != "/bot1:ENVENVENVENVENVENVENVENV/sendMessage|8" {
+		t.Fatalf("budi via shared bot: %s", m)
+	}
+	mail(token, "a3") // the owner's chat is unchanged
+	if m := next(); m != "/bot1:ENVENVENVENVENVENVENVENV/sendMessage|42" {
+		t.Fatalf("owner after budi shared: %s", m)
+	}
+	// without a server bot, a chat id alone is refused and a stored one stops counting
+	a.cfg.tgToken = ""
+	if code, raw := callTok(t, srv, budi, "PUT", "/api/me/telegram", `{"bot_token":"","chat_id":"8"}`, nil); code != 400 || !strings.Contains(raw, "no shared bot") {
+		t.Fatalf("no server bot: %d %s", code, raw)
+	}
+	if _, raw := callTok(t, srv, budi, "GET", "/api/me", "", nil); !strings.Contains(raw, `"connected":false`) {
+		t.Fatalf("server bot removed: %s", raw)
+	}
+	a.cfg.tgToken = "1:ENVENVENVENVENVENVENVENV"
+
 	// disconnecting clears it
 	if code, raw := callTok(t, srv, budi, "PUT", "/api/me/telegram", `{"bot_token":"","chat_id":""}`, nil); code != 200 || !strings.Contains(raw, `"connected":false`) {
 		t.Fatalf("disconnect: %d %s", code, raw)

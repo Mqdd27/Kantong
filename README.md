@@ -94,7 +94,7 @@ curl http://127.0.0.1:8080/healthz   # -> ok
 | `SESSION_SECRET` | – | Minimal 32 karakter, kunci HMAC untuk ID sesi di database. Menggantinya mengeluarkan semua perangkat |
 | `HOST_BIND` / `HOST_PORT` | `127.0.0.1` / `8080` | Alamat & port yang di-publish compose |
 | `COOKIE_SECURE` | `true` | Set `false` hanya kalau diakses lewat HTTP biasa (tanpa HTTPS, PWA tidak bisa di-install) |
-| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | – | Notifikasi transaksi dari email untuk akun pertama; kosong = mati. Tiap akun juga bisa menghubungkan bot sendiri di **Akun & perangkat** (token disimpan terenkripsi dengan kunci dari `SESSION_SECRET`; mengganti `SESSION_SECRET` berarti bot harus dihubungkan ulang) |
+| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | – | Notifikasi transaksi dari email untuk akun pertama; kosong = mati. Akun lain cukup mengisi chat ID-nya di **Akun & perangkat** untuk memakai bot ini, atau menghubungkan bot sendiri (token disimpan terenkripsi dengan kunci dari `SESSION_SECRET`; mengganti `SESSION_SECRET` berarti bot harus dihubungkan ulang) |
 | `FX_URL` | `https://api.frankfurter.dev` | Sumber kurs |
 | `GOLD_URL` | `https://api.gold-api.com` | Harga emas spot (aset mata uang `XAU` = gram) |
 | `DB_PATH` / `PORT` | `/data/money.db` / `8080` | Di dalam container |
@@ -145,8 +145,8 @@ Semua endpoint `/api/*` butuh `Authorization: Bearer $API_TOKEN` (bertindak seba
 | `GET /api/export.xlsx` | Export Semua transaksi (Excel) |
 | `GET /api/events` | Stream SSE |
 | `POST /api/logout` | Keluar dari perangkat ini: sesinya dihapus dan cookie dibersihkan (204). Tanpa auth, aman dipanggil berulang |
-| `GET /api/me` | Akun yang login: `username`, `telegram` (`connected`, `chat_id`, `from_env`). Token bot tidak pernah dikirim balik |
-| `PUT /api/me/telegram` | `{"bot_token","chat_id"}`: hubungkan bot sendiri (dikirim pesan tes dulu); dua-duanya kosong = putuskan |
+| `GET /api/me` | Akun yang login: `username`, `telegram` (`connected`, `chat_id`, `from_env`, `own_bot`, `server_bot`). Token bot tidak pernah dikirim balik |
+| `PUT /api/me/telegram` | `{"bot_token","chat_id"}`: hubungkan Telegram (dikirim pesan tes dulu). `bot_token` kosong = pakai bot server; dua-duanya kosong = putuskan |
 | `GET /api/sessions` | Perangkat yang sedang login: `id`, `user_agent`, `ip`, `created_at`, `last_seen`, `current` (sesi pemanggil) |
 | `DELETE /api/sessions/{id}` | Keluarkan satu perangkat (204; 404 kalau sudah tidak ada). Stream SSE-nya ikut diputus |
 | `POST /api/sessions/revoke` | Keluarkan semua perangkat kecuali pemanggil (dengan `API_TOKEN`: semua perangkat). `API_TOKEN` sendiri tidak ikut dicabut; ganti nilainya di `.env` untuk memutus script |

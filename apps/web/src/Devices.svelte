@@ -60,9 +60,12 @@
   <section class="card list">
     {#if editing}
       <form class="tg" onsubmit={connect}>
-        <label>Token bot <input bind:value={botToken} placeholder="123456:ABC… dari @BotFather" autocomplete="off" spellcheck="false" required /></label>
+        {#if me.telegram.server_bot}
+          <p class="muted">Cukup isi chat ID: notifikasi dikirim lewat bot Kantong di server. Token bot hanya kalau mau pakai bot sendiri.</p>
+        {/if}
         <label>Chat ID <input bind:value={chatId} inputmode="numeric" placeholder="mis. 123456789 (dari @userinfobot)" autocomplete="off" required /></label>
-        <p class="muted">Tekan Start di chat dengan bot kamu dulu. Kantong mengirim pesan tes sebelum menyimpan.</p>
+        <label>Token bot{me.telegram.server_bot ? ' (opsional)' : ''} <input bind:value={botToken} placeholder="123456:ABC… dari @BotFather" autocomplete="off" spellcheck="false" required={!me.telegram.server_bot} /></label>
+        <p class="muted">Tekan Start di chat dengan bot-nya dulu. Kantong mengirim pesan tes sebelum menyimpan.</p>
         {#if tgError}<p class="err" role="alert">{tgError}</p>{/if}
         <div class="btns">
           <button type="button" onclick={() => ((editing = false), (tgError = ''))}>Batal</button>
@@ -75,7 +78,8 @@
           <b>{me.telegram.connected ? 'Terhubung' : 'Belum terhubung'}</b>
           <span class="muted">
             {#if me.telegram.from_env}Bot dari .env server, chat {me.telegram.chat_id}
-            {:else if me.telegram.connected}Bot kamu sendiri, chat {me.telegram.chat_id}
+            {:else if me.telegram.connected && me.telegram.own_bot}Bot kamu sendiri, chat {me.telegram.chat_id}
+            {:else if me.telegram.connected}Bot Kantong di server, chat {me.telegram.chat_id}
             {:else}Transaksi dari email tidak dikirim ke Telegram{/if}
           </span>
         </span>
