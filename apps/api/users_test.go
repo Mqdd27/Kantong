@@ -124,3 +124,55 @@ func TestLoginRateLimit(t *testing.T) {
 		t.Fatal("lockout is per username")
 	}
 }
+
+func TestChangePassword(t *testing.T) {
+	_, srv := newTestApp(t)
+	put := func(c *http.Cookie, tok, body string) int {
+		t.Helper()
+		req, _ := http.NewRequest("PUT", srv.URL+"/api/me/password", strings.NewReader(body))
+		if c != nil {
+			req.AddCookie(c)
+		}
+		if tok != "" {
+			req.Header.Set("Authorization", "Bearer "+tok)
+		}
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		return res.StatusCode
+	}
+	mac, phone := loginAs(t, srv, "Mac"), loginAs(t, srv, "iPhone")
+
+	for _, c := range []struct {
+		c    *http.Cookie
+		tok  string
+		body string
+		want int
+	}{
+		{nil, token, `{"current":"pw","new":"longenough"}`, 403}, // API token, not a device
+		{mac, "", `{"current":"pw","new":"short"}`, 400},
+		{mac, "", `{"current":"nope","new":"longenough"}`, 403}, // 403, not 401: a typo must not sign out
+		{mac, "", `{"current":"pw","new":"longenough"}`, 204},
+	} {
+		if got := put(c.c, c.tok, c.body); got != c.want {
+			t.Fatalf("%s: %d, want %d", c.body, got, c.want)
+		}
+	}
+	if code, _ := as(t, srv, mac, "GET", "/api/me"); code != 200 {
+		t.Fatalf("this device signed out: %d", code)
+	}
+	if code, _ := as(t, srv, phone, "GET", "/api/me"); code != 401 {
+		t.Fatalf("other device still signed in: %d", code)
+	}
+	loginUser(t, srv, "owner", "longenough", "Pixel")
+
+	// wrong current passwords share the login lockout
+	for range maxLoginFails {
+		put(mac, "", `{"current":"nope","new":"longenough"}`)
+	}
+	if got := put(mac, "", `{"current":"longenough","new":"another1"}`); got != 429 {
+		t.Fatalf("lockout: %d", got)
+	}
+}
