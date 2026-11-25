@@ -117,6 +117,22 @@ Mau mengisi aset dari screenshot portofolio juga? Lihat [hermes-assets.md](herme
 
 Tiap orang dapat **profile Hermes** sendiri. Instalasi Hermes dan bot Telegram-nya tetap satu, tapi tiap profile punya memori, `.env`, dan cron sendiri. Bot yang sama mengarahkan pesan tiap orang ke profile-nya berdasarkan Telegram user ID. Email, foto struk, screenshot portofolio, dan chat orang itu masuk ke akun Kantong-nya sendiri, dan Hermes-nya tidak tahu apa-apa soal keuanganmu.
 
+**Cara cepat lewat chat.** Pasang skill `kantong-onboard` di profile default:
+```sh
+cp -R hermes/kantong-onboard ~/.hermes/skills/
+```
+Minta Budi menekan Start di bot dan mengambil user ID-nya dari @userinfobot, lalu chat ke Hermes:
+> daftarkan budi, telegram id 123456789
+
+Hermes menunjukkan rencananya dulu, lalu mengerjakan langkah 1–5 di bawah sekaligus dan mengirim password sementara Kantong untuk Budi (Budi menggantinya di **Akun & perangkat**). Untuk email:
+> sambungkan email budi: imap.gmail.com, budi@gmail.com, app password xxxx
+
+Setelah itu, hapus pesan yang berisi password.
+
+Hanya kamu (pemilik profile default) yang bisa memakai skill ini, dan profile baru tidak mendapat salinannya. Semua profile berjalan sebagai user Linux yang sama, jadi daftarkan hanya orang yang kamu percaya dengan server ini.
+
+Langkah manualnya:
+
 1. Bikin akun dan token-nya di server Kantong:
    ```sh
    docker compose exec money /money-manager adduser budi   # catat password dan api token

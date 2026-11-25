@@ -77,7 +77,7 @@ Skill agent-nya ([Hermes](https://github.com/NousResearch/hermes-agent)) ada di 
   <sub>Pencatatan Asset (keluar/masuk/revisi) dapat dilakukan secara langsung lewat telegram</sub>
 </p>
 
-Skill kedua, [`hermes/finance-assets`](hermes/finance-assets), mengisi aset dari screenshot portofolio yang kamu kirim ke Hermes di Telegram. Panduannya ada di **[docs/hermes-assets.md](docs/hermes-assets.md)**. Skill ketiga, [`hermes/finance-receipt`](hermes/finance-receipt), mencatat transaksi dari foto struk belanja: **[docs/hermes-receipt.md](docs/hermes-receipt.md)**.
+Skill kedua, [`hermes/finance-assets`](hermes/finance-assets), mengisi aset dari screenshot portofolio yang kamu kirim ke Hermes di Telegram. Panduannya ada di **[docs/hermes-assets.md](docs/hermes-assets.md)**. Skill ketiga, [`hermes/finance-receipt`](hermes/finance-receipt), mencatat transaksi dari foto struk belanja: **[docs/hermes-receipt.md](docs/hermes-receipt.md)**. Skill keempat, [`hermes/kantong-onboard`](hermes/kantong-onboard), mendaftarkan orang lain lewat chat. Orang itu mendapat akun Kantong, profile Hermes, dan route di bot yang sama: **[docs/hermes-email.md](docs/hermes-email.md)** bagian 8.
 
 ## Jalanin
 
