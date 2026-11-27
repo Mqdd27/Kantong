@@ -11,6 +11,28 @@ export function toggleHide() {
   try { localStorage.hide = view.hide ? '1' : '' } catch {}
 }
 export const mask = (str) => (view.hide ? '••••••' : str)
+
+// light/dark: follows the system until the toggle picks the other one; picking the system's own value follows it again
+const sysDark = typeof matchMedia === 'function' ? matchMedia('(prefers-color-scheme: dark)') : null
+export const theme = $state({ dark: typeof document === 'object' && document.documentElement.classList.contains('dark') })
+function applyTheme(dark) {
+  theme.dark = dark
+  document.documentElement.classList.toggle('dark', dark)
+  document.querySelector('meta[name=theme-color]')?.setAttribute('content', dark ? '#111214' : '#f6f6f4')
+}
+export function toggleTheme() {
+  const dark = !theme.dark
+  try {
+    if (dark === sysDark?.matches) delete localStorage.theme
+    else localStorage.theme = dark ? 'dark' : 'light'
+  } catch {}
+  applyTheme(dark)
+}
+sysDark?.addEventListener('change', (e) => {
+  let stored
+  try { stored = localStorage.theme } catch {}
+  if (!stored) applyTheme(e.matches)
+})
 export const fmtIDR = { format: (n) => mask(idr.format(n)) }
 export const fmtNum = new Intl.NumberFormat('id-ID')
 export const fmtDay = new Intl.DateTimeFormat('id-ID', { weekday: 'long', day: 'numeric', month: 'long', timeZone: TZ })

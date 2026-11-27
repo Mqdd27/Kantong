@@ -304,23 +304,37 @@
           <div class="actions"><button type="button" onclick={() => dialog.close()}>Batal</button><button type="button" class="primary" onclick={share}>Jadikan kantong bersama</button></div>
         {:else if kantong}
           <p class="muted small">Transaksi dengan akun “{edit.name}” dari semua anggota masuk ke kantong ini.</p>
+          <h3>Anggota <span class="num">{kantong.members.length}</span></h3>
           {#each kantong.members as m (m.user_id)}
-            <div class="order">
-              <span>{m.username}<small>{m.role === 'owner' ? 'pembuat' : 'anggota'} · sejak {fmtShort.format(new Date(m.joined_at))}</small></span>
-              {#if kantong.role === 'owner' && m.role !== 'owner'}<button type="button" class="danger" onclick={() => dropMember(m)}>Keluarkan</button>{/if}
+            <div class="order member">
+              <span class="avatar sm">{m.username[0].toUpperCase()}</span>
+              <span class="who">{m.username}<small>{m.role === 'owner' ? 'Pembuat' : 'Anggota'} · sejak {fmtShort.format(new Date(m.joined_at))}</small></span>
+              {#if kantong.role === 'owner' && m.role !== 'owner'}<button type="button" class="mini" onclick={() => dropMember(m)}>Keluarkan</button>{/if}
             </div>
           {/each}
           {#if kantong.role === 'owner'}
             <form class="inline" onsubmit={addMember}>
-              <input bind:value={invite} required placeholder="username yang diundang" autocapitalize="off" />
+              <input bind:value={invite} required placeholder="Username" aria-label="Username yang diundang" autocapitalize="off" autocomplete="off" />
               <button class="primary">Undang</button>
             </form>
-            <label class="del">Hapus kantong: semua transaksinya ikut terhapus untuk semua anggota. Ketik “{kantong.name}” untuk konfirmasi.
-              <input bind:value={confirmName} autocapitalize="off" />
-            </label>
-            <div class="actions"><button type="button" class="danger" disabled={confirmName !== kantong.name} onclick={dropKantong}>Hapus kantong</button></div>
+            <div class="zone">
+              <b>Hapus kantong</b>
+              <p class="muted small">Semua transaksinya ikut terhapus untuk semua anggota dan tidak bisa dikembalikan.</p>
+              <label>Ketik “{kantong.name}” untuk konfirmasi <input bind:value={confirmName} autocapitalize="off" autocomplete="off" /></label>
+            </div>
+            <div class="actions">
+              <button type="button" class="danger" disabled={confirmName !== kantong.name} onclick={dropKantong}>Hapus kantong</button>
+              <button type="button" onclick={() => dialog.close()}>Tutup</button>
+            </div>
           {:else}
-            <div class="actions"><button type="button" class="danger" onclick={leave}>Keluar dari kantong</button></div>
+            <div class="zone">
+              <b>Keluar dari kantong</b>
+              <p class="muted small">Kantong ini hilang dari daftarmu. Transaksi yang sudah kamu catat tetap di kantong.</p>
+            </div>
+            <div class="actions">
+              <button type="button" class="danger" onclick={leave}>Keluar dari kantong</button>
+              <button type="button" onclick={() => dialog.close()}>Tutup</button>
+            </div>
           {/if}
         {/if}
       </section>
@@ -535,18 +549,40 @@
   .inline {
     display: flex;
     gap: 8px;
-    margin: 12px 0;
+    margin: 12px 0 0;
   }
   .inline input {
     flex: 1;
     min-width: 0;
   }
-  .del {
+  .member {
+    justify-content: flex-start;
+    gap: 12px;
+  }
+  .member .avatar {
+    --hue: var(--accent);
+    font-weight: 650;
+  }
+  .who {
+    flex: 1;
+    min-width: 0;
+  }
+  /* row action: compact, red text, stays at the row's end */
+  .mini {
+    padding: 6px 12px;
+    font-size: 14px;
+    color: var(--out);
+  }
+  /* destructive step, set apart from the everyday controls above it */
+  .zone {
     display: grid;
-    gap: 6px;
-    margin-top: 16px;
-    font-size: 13px;
-    color: var(--muted);
+    gap: 4px;
+    margin: 24px 0 12px;
+    padding-top: 16px;
+    border-top: 1px solid var(--line);
+  }
+  .zone .small {
+    margin: 0 0 4px;
   }
   .name {
     font-weight: 600;
