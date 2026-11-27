@@ -80,10 +80,10 @@ func (a *app) budget(w http.ResponseWriter, r *http.Request) {
 	}
 	rows.Close()
 
-	rows, err = a.db.Query(`SELECT t.category, SUM(t.amount), c.in_budget FROM transactions t
+	rows, err = a.db.Query(`SELECT t.category, SUM(t.amount), MAX(c.in_budget) FROM (SELECT * FROM transactions WHERE `+txScope+`) t
 		JOIN categories c ON c.user_id = t.user_id AND c.name = t.category AND c.type = t.type
-		WHERE t.user_id = ? AND t.type = 'out' AND t.occurred_at >= ? AND t.occurred_at < ?
-		GROUP BY t.category ORDER BY SUM(t.amount) DESC`, uid, from, to)
+		WHERE t.type = 'out' AND t.occurred_at >= @from AND t.occurred_at < @to
+		GROUP BY t.category ORDER BY SUM(t.amount) DESC`, sql.Named("uid", uid), sql.Named("from", from), sql.Named("to", to))
 	if err != nil {
 		a.fail(w, err)
 		return
@@ -325,7 +325,7 @@ func (a *app) checkRec(w http.ResponseWriter, r *http.Request, x *Recurring) boo
 	}
 	t := x.tx(x.NextDate)
 	x.uid = userID(r)
-	if !a.validateTx(w, r, &t) {
+	if !a.validateTx(w, r, x.uid, &t) {
 		return false
 	}
 	x.Merchant, x.Account, x.ToAccount, x.Note, x.Currency, x.OrigAmount = t.Merchant, t.Account, t.ToAccount, t.Note, t.Currency, t.OrigAmount
@@ -460,7 +460,7 @@ func (a *app) postDue(ctx context.Context) {
 // ---------- export ----------
 
 func (a *app) exportXLSX(w http.ResponseWriter, r *http.Request) {
-	rows, err := a.db.Query(`SELECT `+txCols+` FROM transactions WHERE user_id = ? ORDER BY occurred_at, id`, userID(r))
+	rows, err := a.db.Query(`SELECT `+txCols+` FROM transactions WHERE `+txScope+` ORDER BY occurred_at, id`, sql.Named("uid", userID(r)))
 	if err != nil {
 		a.fail(w, err)
 		return

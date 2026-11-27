@@ -33,16 +33,22 @@ type Tx struct {
 	Currency    string   `json:"currency"`    // default IDR
 	OrigAmount  *float64 `json:"orig_amount"` // amount in Currency when not IDR; Amount is then its IDR value
 	SplitOf     *int64   `json:"split_of"`    // id of the original row when this is part of a split
+	CreatedBy   *int64   `json:"created_by"`  // account that entered it; null once that account is gone
+	uid         int64    // account the row belongs to: its author, or a kantong bersama's holder after the author left
 }
 
-const txCols = `id, occurred_at, amount, type, category, merchant, account, to_account, note, source, source_ref, confidence, needs_review, currency, orig_amount, split_of`
+const txCols = `id, occurred_at, amount, type, category, merchant, account, to_account, note, source, source_ref, confidence, needs_review, currency, orig_amount, split_of, user_id, created_by`
+
+// txScope limits transactions to the ones the caller may see and change: their own plus those of
+// any kantong bersama they belong to (kantong_tx). Arg: @uid.
+const txScope = `(user_id = @uid OR id IN (SELECT k.tx_id FROM kantong_tx k JOIN shared_members m ON m.shared_id = k.shared_id WHERE m.user_id = @uid))`
 
 type scanner interface{ Scan(...any) error }
 
 func scanTx(s scanner) (Tx, error) {
 	var t Tx
 	err := s.Scan(&t.ID, &t.OccurredAt, &t.Amount, &t.Type, &t.Category, &t.Merchant, &t.Account, &t.ToAccount,
-		&t.Note, &t.Source, &t.SourceRef, &t.Confidence, &t.NeedsReview, &t.Currency, &t.OrigAmount, &t.SplitOf)
+		&t.Note, &t.Source, &t.SourceRef, &t.Confidence, &t.NeedsReview, &t.Currency, &t.OrigAmount, &t.SplitOf, &t.uid, &t.CreatedBy)
 	return t, err
 }
 
@@ -131,8 +137,9 @@ func (a *app) categories(uid int64) ([]Category, error) {
 }
 
 // validateTx normalizes and checks t; it writes the error response and returns false on failure.
-func (a *app) validateTx(w http.ResponseWriter, r *http.Request, t *Tx) bool {
-	if body := a.checkTx(r.Context(), userID(r), t); body != nil {
+// uid is the account the row belongs to, whose categories apply.
+func (a *app) validateTx(w http.ResponseWriter, r *http.Request, uid int64, t *Tx) bool {
+	if body := a.checkTx(r.Context(), uid, t); body != nil {
 		writeJSON(w, http.StatusBadRequest, body)
 		return false
 	}
@@ -205,7 +212,7 @@ func (a *app) checkTx(ctx context.Context, uid int64, t *Tx) map[string]any {
 }
 
 func (a *app) getTx(uid, id int64) (Tx, error) {
-	return scanTx(a.db.QueryRow(`SELECT `+txCols+` FROM transactions WHERE id = ? AND user_id = ?`, id, uid))
+	return scanTx(a.db.QueryRow(`SELECT `+txCols+` FROM transactions WHERE id = @id AND `+txScope, sql.Named("id", id), sql.Named("uid", uid)))
 }
 
 // ---------- transactions ----------
@@ -224,7 +231,7 @@ func (a *app) createTx(w http.ResponseWriter, r *http.Request) {
 	if t.Source == "email" && t.Type == "transfer" && strings.TrimSpace(t.ToAccount) == "" {
 		t.NeedsReview = true
 	}
-	if !a.validateTx(w, r, &t) {
+	if !a.validateTx(w, r, uid, &t) {
 		return
 	}
 	if err := a.insertTx(uid, &t); err != nil {
@@ -243,18 +250,19 @@ func (a *app) createTx(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, t) // includes id, plus the computed IDR amount
 }
 
-// insertTx stores a validated t, sets its ID and notifies clients.
+// insertTx stores a validated t entered by uid, sets its ID and notifies clients.
 func (a *app) insertTx(uid int64, t *Tx) error {
 	res, err := a.db.Exec(`INSERT INTO transactions
-		(user_id, occurred_at, amount, type, category, merchant, account, to_account, note, source, source_ref, confidence, needs_review, currency, orig_amount)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		uid, t.OccurredAt, t.Amount, t.Type, t.Category, t.Merchant, t.Account, t.ToAccount, t.Note, t.Source, t.SourceRef, t.Confidence, t.NeedsReview,
+		(user_id, created_by, occurred_at, amount, type, category, merchant, account, to_account, note, source, source_ref, confidence, needs_review, currency, orig_amount)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		uid, uid, t.OccurredAt, t.Amount, t.Type, t.Category, t.Merchant, t.Account, t.ToAccount, t.Note, t.Source, t.SourceRef, t.Confidence, t.NeedsReview,
 		t.Currency, t.OrigAmount)
 	if err != nil {
 		return err
 	}
 	t.ID, _ = res.LastInsertId()
-	a.hub.publish(uid, "transaction.created", *t)
+	t.uid, t.CreatedBy = uid, &uid
+	a.publishTx(uid, "transaction.created", *t)
 	return nil
 }
 
@@ -268,12 +276,13 @@ func (a *app) listTx(w http.ResponseWriter, r *http.Request) {
 	uid := userID(r)
 	if q := strings.TrimSpace(r.URL.Query().Get("q")); q != "" { // search all months
 		like := "%" + strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`).Replace(q) + "%"
-		rows, err = a.db.Query(`SELECT `+txCols+` FROM transactions WHERE user_id = ?2 AND
-			(merchant LIKE ?1 ESCAPE '\' OR note LIKE ?1 ESCAPE '\' OR category LIKE ?1 ESCAPE '\' OR account LIKE ?1 ESCAPE '\')
-			ORDER BY occurred_at DESC, id DESC LIMIT 200`, like, uid)
+		rows, err = a.db.Query(`SELECT `+txCols+` FROM transactions WHERE `+txScope+` AND
+			(merchant LIKE @q ESCAPE '\' OR note LIKE @q ESCAPE '\' OR category LIKE @q ESCAPE '\' OR account LIKE @q ESCAPE '\')
+			ORDER BY occurred_at DESC, id DESC LIMIT 200`, sql.Named("q", like), sql.Named("uid", uid))
 	} else {
 		rows, err = a.db.Query(`SELECT `+txCols+` FROM transactions
-			WHERE user_id = ? AND occurred_at >= ? AND occurred_at < ? ORDER BY occurred_at DESC, id DESC`, uid, from, to)
+			WHERE `+txScope+` AND occurred_at >= @from AND occurred_at < @to ORDER BY occurred_at DESC, id DESC`,
+			sql.Named("uid", uid), sql.Named("from", from), sql.Named("to", to))
 	}
 	if err != nil {
 		a.fail(w, err)
@@ -313,8 +322,7 @@ func (a *app) patchTx(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &p) {
 		return
 	}
-	uid := userID(r)
-	t, err := a.getTx(uid, id)
+	t, err := a.getTx(userID(r), id)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeErr(w, http.StatusNotFound, "not found")
 		return
@@ -322,6 +330,8 @@ func (a *app) patchTx(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, err)
 		return
 	}
+	uid := t.uid // a kantong member works on another member's entry as that entry's account
+	orig := t
 	set := func(dst *string, src *string) {
 		if src != nil {
 			*dst = *src
@@ -345,7 +355,11 @@ func (a *app) patchTx(w http.ResponseWriter, r *http.Request) {
 	}
 	conf := t.Confidence
 	t.Confidence = nil // don't let old low confidence re-flag a manual edit
-	if !a.validateTx(w, r, &t) {
+	if !a.validateTx(w, r, uid, &t) {
+		return
+	}
+	if uid != userID(r) && (t.Account != orig.Account || t.ToAccount != orig.ToAccount) {
+		writeErr(w, http.StatusBadRequest, "only the author can move this transaction to another account")
 		return
 	}
 	t.Confidence = conf
@@ -360,7 +374,7 @@ func (a *app) patchTx(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, err)
 		return
 	}
-	a.hub.publish(uid, "transaction.updated", t)
+	a.publishTx(uid, "transaction.updated", t)
 	writeJSON(w, http.StatusOK, t)
 }
 
@@ -369,8 +383,7 @@ func (a *app) deleteTx(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	uid := userID(r)
-	t, err := a.getTx(uid, id)
+	t, err := a.getTx(userID(r), id)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeErr(w, http.StatusNotFound, "not found")
 		return
@@ -378,6 +391,7 @@ func (a *app) deleteTx(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, err)
 		return
 	}
+	uid := t.uid // a kantong member works on another member's entry as that entry's account
 	// one transaction: a failure halfway must not leave a split with no head or a lost email ref
 	tx, err := a.db.Begin()
 	if err != nil {
@@ -426,10 +440,10 @@ func (a *app) deleteTx(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, sid := range siblings { // their split_of / source_ref may have changed
 		if x, err := a.getTx(uid, sid); err == nil {
-			a.hub.publish(uid, "transaction.updated", x)
+			a.publishTx(uid, "transaction.updated", x)
 		}
 	}
-	a.hub.publish(uid, "transaction.deleted", t)
+	a.publishTx(uid, "transaction.deleted", t)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -451,8 +465,7 @@ func (a *app) splitTx(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &b) {
 		return
 	}
-	uid := userID(r)
-	t, err := a.getTx(uid, id)
+	t, err := a.getTx(userID(r), id)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeErr(w, http.StatusNotFound, "not found")
 		return
@@ -460,9 +473,10 @@ func (a *app) splitTx(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, err)
 		return
 	}
+	uid := t.uid // a kantong member works on another member's entry as that entry's account
 	head := t
 	if t.SplitOf != nil && *t.SplitOf != t.ID {
-		if head, err = a.getTx(uid, *t.SplitOf); err != nil {
+		if head, err = a.getTx(uid, *t.SplitOf); err != nil { // same owner as t
 			a.fail(w, err)
 			return
 		}
@@ -542,9 +556,9 @@ func (a *app) splitTx(w http.ResponseWriter, r *http.Request) {
 			x.SourceRef = nil // unique; the original row keeps the email's ref
 			var res sql.Result
 			res, err = tx.Exec(`INSERT INTO transactions
-				(user_id, occurred_at, amount, type, category, merchant, account, to_account, note, source, source_ref, confidence, needs_review, currency, orig_amount, split_of)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, NULL, ?)`,
-				uid, x.OccurredAt, x.Amount, x.Type, x.Category, x.Merchant, x.Account, x.ToAccount, x.Note, x.Source, x.Confidence, x.NeedsReview, x.Currency, x.SplitOf)
+				(user_id, created_by, occurred_at, amount, type, category, merchant, account, to_account, note, source, source_ref, confidence, needs_review, currency, orig_amount, split_of)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, NULL, ?)`,
+				uid, x.CreatedBy, x.OccurredAt, x.Amount, x.Type, x.Category, x.Merchant, x.Account, x.ToAccount, x.Note, x.Source, x.Confidence, x.NeedsReview, x.Currency, x.SplitOf)
 			if err == nil {
 				x.ID, _ = res.LastInsertId()
 			}
@@ -559,12 +573,13 @@ func (a *app) splitTx(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, err)
 		return
 	}
+	to := a.audience(uid, head)
 	for _, rid := range removed {
-		a.hub.publish(uid, "transaction.deleted", Tx{ID: rid})
+		a.publishAll(to, "transaction.deleted", Tx{ID: rid})
 	}
-	a.hub.publish(uid, "transaction.updated", out[0])
+	a.publishAll(to, "transaction.updated", out[0])
 	for _, x := range out[1:] {
-		a.hub.publish(uid, "transaction.created", x)
+		a.publishAll(to, "transaction.created", x)
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -626,7 +641,8 @@ func (a *app) summary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rows, err := a.db.Query(`SELECT type, category, SUM(amount), COUNT(*) FROM transactions
-		WHERE user_id = ? AND occurred_at >= ? AND occurred_at < ? GROUP BY type, category ORDER BY SUM(amount) DESC`, userID(r), from, to)
+		WHERE `+txScope+` AND occurred_at >= @from AND occurred_at < @to GROUP BY type, category ORDER BY SUM(amount) DESC`,
+		sql.Named("uid", userID(r)), sql.Named("from", from), sql.Named("to", to))
 	if err != nil {
 		a.fail(w, err)
 		return

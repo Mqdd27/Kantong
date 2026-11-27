@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
 	"log/slog"
 	"math"
@@ -52,7 +53,8 @@ func (a *app) insightData(uid int64, end string, months int) ([]insightMonth, er
 		from := endT.AddDate(0, -i, 0).Format("2006-01")
 		to := endT.AddDate(0, -i+1, 0).Format("2006-01")
 		rows, err := a.db.Query(`SELECT type, category, SUM(amount) FROM transactions
-			WHERE user_id = ? AND occurred_at >= ? AND occurred_at < ? GROUP BY type, category`, uid, from, to)
+			WHERE `+txScope+` AND occurred_at >= @from AND occurred_at < @to GROUP BY type, category`,
+			sql.Named("uid", uid), sql.Named("from", from), sql.Named("to", to))
 		if err != nil {
 			return nil, err
 		}
