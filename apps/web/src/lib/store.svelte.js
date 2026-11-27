@@ -35,6 +35,7 @@ export const s = $state({
   error: '',
   portfolio: { assets: [], total_idr: 0, pending_orders: [], missing_rates: [] },
   history: [],
+  shared: [], // kantong bersama the account belongs to, with members (GET /api/shared)
   budget: null,
   recurring: [],
   chat: false, // AI assistant: on only when the server has HERMES_API_URL
@@ -70,7 +71,7 @@ function remove(id) {
 function signedOut() {
   es?.close()
   clearTimeout(retry)
-  Object.assign(s, { authed: false, live: false, txs: [], categories: [], history: [], budget: null, recurring: [], chat: false,
+  Object.assign(s, { authed: false, live: false, txs: [], categories: [], history: [], shared: [], budget: null, recurring: [], chat: false,
     portfolio: { assets: [], total_idr: 0, pending_orders: [], missing_rates: [] } })
 }
 
@@ -176,6 +177,7 @@ export function connect() {
   es.addEventListener('assets.changed', loadAssets)
   es.addEventListener('budget.changed', budgetSoon)
   es.addEventListener('categories.changed', loadCategories)
+  es.addEventListener('transactions.changed', () => load()) // a kantong bersama and its transactions were deleted
   // asset balances follow transactions on their account, so refresh them too once loaded
   const txChanged = () => { budgetSoon(); if (s.portfolio.assets.length) loadAssets() }
   for (const ev of ['transaction.created', 'transaction.updated', 'transaction.deleted']) es.addEventListener(ev, txChanged)
@@ -294,6 +296,7 @@ export async function loadAssets() {
   try {
     s.portfolio = await api('/assets') // also records today's snapshot
     s.history = await api('/assets/history')
+    s.shared = await api('/shared')
   } catch (e) {
     fail(e)
   }
