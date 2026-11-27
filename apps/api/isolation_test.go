@@ -215,3 +215,293 @@ func TestIsolation(t *testing.T) {
 		t.Errorf("budi events: %v, want %s", got, want)
 	}
 }
+
+// TestSharedKantong covers the access rules of a kantong bersama (docs/shared-kantong.md §5):
+// one asset row shared by its members, invisible (404) to everyone else.
+func TestSharedKantong(t *testing.T) {
+	a, srv := newTestApp(t)
+	tok := map[string]string{"owner": token}
+	uid := map[string]int64{"owner": a.ownerID}
+	for _, n := range []string{"budi", "sari", "dedi"} {
+		id, err := addUser(a.db, n, "pw")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if tok[n], err = newToken(a.db, n); err != nil {
+			t.Fatal(err)
+		}
+		uid[n] = id
+	}
+	// as calls the API as who and reports a status other than want; must stops the test instead.
+	as := func(who string, want int, method, path, body string) string {
+		t.Helper()
+		code, raw := callTok(t, srv, tok[who], method, path, body, nil)
+		if code != want {
+			t.Errorf("%s %s %s: %d %s, want %d", who, method, path, code, strings.TrimSpace(raw), want)
+		}
+		return raw
+	}
+	must := func(who string, want int, method, path, body string) string {
+		t.Helper()
+		code, raw := callTok(t, srv, tok[who], method, path, body, nil)
+		if code != want {
+			t.Fatalf("%s %s %s: %d %s, want %d", who, method, path, code, strings.TrimSpace(raw), want)
+		}
+		return raw
+	}
+	id := func(raw string) string {
+		var v struct {
+			ID int64 `json:"id"`
+		}
+		json.Unmarshal([]byte(raw), &v)
+		return fmt.Sprint(v.ID)
+	}
+	type sharedAsset struct {
+		ID       int64   `json:"id"`
+		Name     string  `json:"name"`
+		Balance  float64 `json:"balance"`
+		SharedID int64   `json:"shared_id"`
+	}
+	assets := func(who string) (out struct {
+		Assets   []sharedAsset `json:"assets"`
+		TotalIDR int64         `json:"total_idr"`
+	}) {
+		t.Helper()
+		callTok(t, srv, tok[who], "GET", "/api/assets", "", &out)
+		return out
+	}
+	balance := func(who, assetID string) (float64, bool) {
+		t.Helper()
+		for _, x := range assets(who).Assets {
+			if fmt.Sprint(x.ID) == assetID {
+				return x.Balance, true
+			}
+		}
+		return 0, false
+	}
+	type kantong struct {
+		ID      int64  `json:"id"`
+		AssetID int64  `json:"asset_id"`
+		Name    string `json:"name"`
+		Role    string `json:"role"`
+		Members []struct {
+			UserID int64  `json:"user_id"`
+			Role   string `json:"role"`
+		} `json:"members"`
+	}
+	kantongs := func(who string) (out []kantong) {
+		t.Helper()
+		callTok(t, srv, tok[who], "GET", "/api/shared", "", &out)
+		return out
+	}
+	createdBy := func(txID string) (owner, by int64) {
+		t.Helper()
+		if err := a.db.QueryRow(`SELECT user_id, created_by FROM transactions WHERE id = ?`, txID).Scan(&owner, &by); err != nil {
+			t.Fatalf("tx %s: %v", txID, err)
+		}
+		return
+	}
+	// a minute ahead, so a transaction is after the balance anchor saved in the same second
+	soon := time.Now().In(wib).Add(time.Minute).Format(time.RFC3339)
+	txBody := func(amount int, account, extra string) string {
+		return fmt.Sprintf(`{"amount":%d,"type":"out","category":"Makan","account":%q,"occurred_at":%q,"source":"manual"%s}`, amount, account, soon, extra)
+	}
+
+	// owner has a personal bank account; budi a personal "Dapur"
+	must("owner", 201, "POST", "/api/assets", `{"name":"BCA","kind":"bank","balance":1000000}`)
+	budiDapur := id(must("budi", 201, "POST", "/api/assets", `{"name":"Dapur","kind":"cash","balance":10}`))
+
+	raw := must("owner", 201, "POST", "/api/shared", `{"name":"Dapur","kind":"cash","balance":500000}`)
+	var k kantong
+	json.Unmarshal([]byte(raw), &k)
+	sid, asset := fmt.Sprint(k.ID), fmt.Sprint(k.AssetID)
+	if k.Role != "owner" || k.Name != "Dapur" || k.AssetID == 0 {
+		t.Fatalf("created kantong: %s", raw)
+	}
+
+	t.Run("8 name clash with a member's personal asset", func(t *testing.T) {
+		as("owner", 409, "POST", "/api/shared/"+sid+"/members", `{"username":"budi"}`) // budi still has a personal Dapur
+		must("budi", 204, "DELETE", "/api/assets/"+budiDapur, "")
+		must("owner", 201, "POST", "/api/shared/"+sid+"/members", `{"username":"budi"}`)
+		as("owner", 409, "POST", "/api/shared/"+sid+"/members", `{"username":"budi"}`) // already a member
+		as("budi", 409, "POST", "/api/assets", `{"name":"dapur","kind":"cash"}`)
+		as("owner", 409, "POST", "/api/assets", `{"name":"Dapur","kind":"cash"}`)
+		as("owner", 409, "POST", "/api/shared", `{"name":"DAPUR","kind":"cash"}`)
+		as("budi", 409, "PATCH", "/api/assets/"+id(must("budi", 201, "POST", "/api/assets", `{"name":"Gopay","kind":"ewallet"}`)), `{"name":"Dapur"}`)
+	})
+
+	ownerTx := id(must("owner", 201, "POST", "/api/transactions", txBody(20000, "Dapur", "")))
+	budiTx := id(must("budi", 201, "POST", "/api/transactions", txBody(30000, "dapur", "")))
+	must("budi", 201, "POST", "/api/transactions", txBody(5000, "Lain", `,"merchant":"Rahasia Budi"`))
+
+	t.Run("1 outsider gets 404 everywhere", func(t *testing.T) {
+		if _, ok := balance("sari", asset); ok {
+			t.Error("sari sees the kantong in /api/assets")
+		}
+		if ks := kantongs("sari"); len(ks) != 0 {
+			t.Errorf("sari GET /api/shared: %+v", ks)
+		}
+		if raw := as("sari", 200, "GET", "/api/transactions", ""); strings.TrimSpace(raw) != "[]" {
+			t.Errorf("sari sees transactions: %s", raw)
+		}
+		for _, c := range []struct{ method, path, body string }{
+			{"GET", "/api/assets/" + asset + "/activity", ""},
+			{"PATCH", "/api/assets/" + asset, `{"balance":1}`},
+			{"DELETE", "/api/assets/" + asset, ""},
+			{"PATCH", "/api/transactions/" + ownerTx, `{"note":"x"}`},
+			{"DELETE", "/api/transactions/" + budiTx, ""},
+			{"POST", "/api/transactions/" + ownerTx + "/split", `{"parts":[{"category":"Makan","amount":20000}]}`},
+			{"POST", "/api/shared/" + sid + "/members", `{"username":"sari"}`},
+			{"DELETE", "/api/shared/" + sid + "/members/" + fmt.Sprint(uid["budi"]), ""},
+			{"DELETE", "/api/shared/" + sid, `{"confirm":"Dapur"}`},
+			{"POST", "/api/shared/" + sid + "/leave", ""},
+		} {
+			as("sari", 404, c.method, c.path, c.body)
+		}
+	})
+
+	t.Run("5 live balance sums both members once", func(t *testing.T) {
+		for _, who := range []string{"owner", "budi"} {
+			if b, ok := balance(who, asset); !ok || b != 450000 {
+				t.Errorf("%s balance: %v %v, want 450000", who, b, ok)
+			}
+		}
+	})
+
+	t.Run("6 net worth and spending count the kantong once", func(t *testing.T) {
+		if got := assets("owner").TotalIDR; got != 1450000 {
+			t.Errorf("owner net worth: %d, want 1450000", got)
+		}
+		if got := assets("budi").TotalIDR; got != 450000 {
+			t.Errorf("budi net worth: %d, want 450000", got)
+		}
+		var sum struct {
+			Out int64 `json:"out"`
+		}
+		for who, want := range map[string]int64{"owner": 50000, "budi": 55000} {
+			sum.Out = 0
+			callTok(t, srv, tok[who], "GET", "/api/summary", "", &sum)
+			if sum.Out != want {
+				t.Errorf("%s summary out: %d, want %d", who, sum.Out, want)
+			}
+		}
+		if raw := as("owner", 200, "GET", "/api/transactions", ""); strings.Contains(raw, "Rahasia Budi") {
+			t.Error("budi's personal transaction leaks to the owner")
+		}
+	})
+
+	t.Run("2 members read and write transactions and balance", func(t *testing.T) {
+		var txs []struct {
+			ID        int64  `json:"id"`
+			CreatedBy *int64 `json:"created_by"`
+		}
+		callTok(t, srv, tok["owner"], "GET", "/api/transactions", "", &txs)
+		seen := false
+		for _, x := range txs {
+			if fmt.Sprint(x.ID) == budiTx {
+				seen = x.CreatedBy != nil && *x.CreatedBy == uid["budi"]
+			}
+		}
+		if !seen {
+			t.Errorf("owner doesn't see budi's transaction with created_by: %+v", txs)
+		}
+		as("budi", 200, "PATCH", "/api/transactions/"+ownerTx, `{"note":"dari budi"}`)
+		as("budi", 400, "PATCH", "/api/transactions/"+ownerTx, `{"account":"BCA"}`) // can't move it into owner's personal account
+		as("owner", 200, "PATCH", "/api/transactions/"+budiTx, `{"amount":35000}`)
+		as("budi", 200, "GET", "/api/assets/"+asset+"/activity", "")
+		as("budi", 200, "PATCH", "/api/assets/"+asset, `{"balance":400000}`)
+		if b, _ := balance("owner", asset); b != 400000 {
+			t.Errorf("owner balance after budi's update: %v", b)
+		}
+		as("budi", 204, "DELETE", "/api/transactions/"+ownerTx, "")
+		if o, by := createdBy(budiTx); o != uid["budi"] || by != uid["budi"] {
+			t.Errorf("budi's tx: user %d created_by %d", o, by)
+		}
+	})
+
+	t.Run("3 invited member can't invite, remove or delete", func(t *testing.T) {
+		as("budi", 403, "POST", "/api/shared/"+sid+"/members", `{"username":"sari"}`)
+		as("budi", 403, "DELETE", "/api/shared/"+sid+"/members/"+fmt.Sprint(uid["owner"]), "")
+		as("budi", 403, "DELETE", "/api/shared/"+sid, `{"confirm":"Dapur"}`)
+		as("budi", 409, "DELETE", "/api/assets/"+asset, "") // the kantong is deleted through /api/shared only
+		as("owner", 400, "POST", "/api/shared/"+sid+"/leave", "")
+	})
+
+	t.Run("9 email transaction keeps its mailbox as created_by", func(t *testing.T) {
+		x := id(must("budi", 201, "POST", "/api/transactions", `{"amount":7000,"type":"out","category":"Makan","account":"Dapur","occurred_at":"`+soon+`","source":"email","source_ref":"<b1@bank>"}`))
+		if o, by := createdBy(x); o != uid["budi"] || by != uid["budi"] {
+			t.Errorf("email tx: user %d created_by %d", o, by)
+		}
+		if raw := as("owner", 200, "GET", "/api/transactions", ""); !strings.Contains(raw, `"id":`+x+`,`) {
+			t.Error("owner doesn't see budi's email transaction")
+		}
+	})
+
+	t.Run("leaving keeps the member's transactions in the kantong", func(t *testing.T) {
+		must("owner", 201, "POST", "/api/shared/"+sid+"/members", `{"username":"sari"}`)
+		x := id(must("sari", 201, "POST", "/api/transactions", txBody(1000, "Dapur", "")))
+		before, _ := balance("owner", asset)
+		must("sari", 204, "POST", "/api/shared/"+sid+"/leave", "")
+		as("sari", 404, "PATCH", "/api/assets/"+asset, `{"note":"x"}`)
+		if after, _ := balance("owner", asset); after != before {
+			t.Errorf("balance moved when sari left: %v -> %v", before, after)
+		}
+		if _, by := createdBy(x); by != uid["sari"] {
+			t.Errorf("sari's tx created_by: %d", by)
+		}
+		if raw := as("budi", 200, "GET", "/api/transactions", ""); !strings.Contains(raw, `"id":`+x+`,`) {
+			t.Error("budi lost sari's transaction")
+		}
+	})
+
+	t.Run("4 creator invites, removes and deletes with the right name", func(t *testing.T) {
+		must("owner", 204, "DELETE", "/api/shared/"+sid+"/members/"+fmt.Sprint(uid["budi"]), "")
+		as("budi", 404, "GET", "/api/assets/"+asset+"/activity", "")
+		if b, ok := balance("owner", asset); !ok || b != 393000 {
+			t.Errorf("owner balance after removing budi: %v %v, want 393000", b, ok)
+		}
+		as("owner", 400, "DELETE", "/api/shared/"+sid, `{"confirm":"dapur"}`)
+		as("owner", 400, "DELETE", "/api/shared/"+sid, ``)
+		must("owner", 204, "DELETE", "/api/shared/"+sid, `{"confirm":"Dapur"}`)
+		if _, ok := balance("owner", asset); ok {
+			t.Error("kantong still listed after delete")
+		}
+		var n int
+		a.db.QueryRow(`SELECT COUNT(*) FROM transactions WHERE lower(account) = 'dapur'`).Scan(&n)
+		if n != 0 {
+			t.Errorf("%d kantong transactions left after delete", n)
+		}
+		if raw := as("budi", 200, "GET", "/api/transactions", ""); !strings.Contains(raw, "Rahasia Budi") {
+			t.Error("deleting the kantong took budi's personal transaction")
+		}
+	})
+
+	t.Run("7 creator's account deleted: oldest member takes over, else the kantong goes", func(t *testing.T) {
+		k2 := id(must("owner", 201, "POST", "/api/shared", `{"name":"Liburan","kind":"cash","balance":0}`))
+		must("owner", 201, "POST", "/api/shared/"+k2+"/members", `{"username":"budi"}`)
+		must("owner", 201, "POST", "/api/shared/"+k2+"/members", `{"username":"dedi"}`)
+		x := id(must("owner", 201, "POST", "/api/transactions", txBody(1000, "Liburan", "")))
+		solo := id(must("dedi", 201, "POST", "/api/shared", `{"name":"Solo","kind":"cash","balance":0}`))
+		if err := a.handOffShared(uid["owner"]); err != nil {
+			t.Fatal(err)
+		}
+		if ks := kantongs("budi"); len(ks) != 1 || ks[0].Role != "owner" || len(ks[0].Members) != 2 {
+			t.Errorf("budi after hand-off: %+v", ks)
+		}
+		if ks := kantongs("owner"); len(ks) != 0 {
+			t.Errorf("old creator still a member: %+v", ks)
+		}
+		if o, by := createdBy(x); o != uid["budi"] || by != uid["owner"] {
+			t.Errorf("creator's tx after hand-off: user %d created_by %d", o, by)
+		}
+		as("budi", 201, "POST", "/api/shared/"+k2+"/members", `{"username":"sari"}`)
+		if err := a.handOffShared(uid["dedi"]); err != nil {
+			t.Fatal(err)
+		}
+		var n int
+		a.db.QueryRow(`SELECT COUNT(*) FROM shared_assets WHERE id = ?`, solo).Scan(&n)
+		if n != 0 || len(kantongs("dedi")) != 0 {
+			t.Error("kantong without other members survived its creator")
+		}
+	})
+}
