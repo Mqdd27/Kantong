@@ -641,7 +641,8 @@ func TestDebtDueStatus(t *testing.T) {
 	five, last := 5, 31
 	check := func(name string, x Asset, now, wantDate string, wantOver bool) {
 		t.Helper()
-		if err := a.dueStatus(context.Background(), a.ownerID, &x, day(now)); err != nil {
+		x.uid = a.ownerID
+		if err := a.dueStatus(context.Background(), &x, day(now)); err != nil {
 			t.Fatal(err)
 		}
 		if x.DueDate != wantDate || x.Overdue != wantOver {

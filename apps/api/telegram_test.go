@@ -133,3 +133,46 @@ func TestTelegramPerAccount(t *testing.T) {
 		t.Fatalf("notified after disconnect: %s", m)
 	}
 }
+
+// An email transaction booked to a kantong bersama reaches every member; the others see who recorded it.
+func TestTelegramKantong(t *testing.T) {
+	got := make(chan string, 8)
+	tg := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.ParseForm()
+		got <- r.Form.Get("chat_id") + "|" + r.Form.Get("text")
+	}))
+	defer tg.Close()
+	a, err := newApp(config{dbPath: filepath.Join(t.TempDir(), "t.db"), apiToken: token, appPassword: "pw",
+		sessionSecret: strings.Repeat("s", 32), tgAPI: tg.URL, tgToken: "1:ENVENVENVENVENVENVENVENV", tgChat: "42"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(a.routes())
+	defer func() { srv.Close(); a.db.Close() }()
+	addUser(a.db, "budi", "pw2")
+	budi, _ := newToken(a.db, "budi")
+	for _, c := range []struct{ tok, method, path, body string }{
+		{budi, "PUT", "/api/me/telegram", `{"chat_id":"7"}`},
+		{token, "POST", "/api/shared", `{"name":"Dapur","kind":"cash"}`},
+		{token, "POST", "/api/shared/1/members", `{"username":"budi"}`},
+	} {
+		if code, raw := callTok(t, srv, c.tok, c.method, c.path, c.body, nil); code >= 300 {
+			t.Fatalf("%s %s: %d %s", c.method, c.path, code, raw)
+		}
+	}
+	<-got // budi's connect test message
+	callTok(t, srv, budi, "POST", "/api/transactions", `{"amount":1000,"type":"out","category":"Makan","account":"Dapur","source":"email","source_ref":"k1"}`, nil)
+	msgs := map[string]string{}
+	for range 2 {
+		select {
+		case m := <-got:
+			chat, text, _ := strings.Cut(m, "|")
+			msgs[chat] = text
+		case <-time.After(2 * time.Second):
+			t.Fatalf("missing notification, got %v", msgs)
+		}
+	}
+	if msgs["7"] != "Keluar Rp1.000 · Makan" || msgs["42"] != "Keluar Rp1.000 · Makan · dicatat budi" {
+		t.Errorf("notifications: %q", msgs)
+	}
+}

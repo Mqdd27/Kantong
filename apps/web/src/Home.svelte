@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte'
-  import { s, fmtIDR, loadAssets } from './lib/store.svelte.js'
+  import { s, fmtIDR, loadAssets, theme, toggleTheme } from './lib/store.svelte.js'
   import { catLook } from './lib/look.js'
   import PageHead from './PageHead.svelte'
   import MonthBar from './MonthBar.svelte'
@@ -35,6 +35,9 @@
 <PageHead title="Beranda">
   {#if s.chat}<a class="icon" href="#/chat" aria-label="Tanya asisten"><Icon name="chat" /></a>{/if}
   <a class="icon" href="#/devices" aria-label="Akun & perangkat" title="Akun & perangkat"><Icon name="laptop" /></a>
+  <button class="icon" aria-label={theme.dark ? 'Mode terang' : 'Mode gelap'} title={theme.dark ? 'Mode terang' : 'Mode gelap'} onclick={toggleTheme}>
+    <Icon name={theme.dark ? 'sun' : 'moon'} />
+  </button>
 </PageHead>
 <MonthBar />
 

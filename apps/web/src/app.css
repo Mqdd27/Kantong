@@ -35,40 +35,40 @@
   --t-state: 180ms;
   --t-bar: 420ms; /* budget and category bars easing to a new value */
   --t-sheet: 340ms;
-  color-scheme: light dark;
+  color-scheme: light;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0f1012;
-    --surface: #1a1b1f;
-    --line: #2a2b30;
-    --text: #ececea;
-    --muted: #9ca1a9;
-    --accent: #4fb89a;
-    --on-accent: #0c1f1a;
-    --in: #5cc98c;
-    --out: #f0715d;
-    --warn: #d99a3a;
-    --on-warn: #1f1405;
-    --on-out: #2b0c06;
-    --field: #6c6d73;
-    --series-1: #3987e5;
-    --series-2: #d95926;
-    --shadow: none;
-    --kcard: #232428;
-    --kcard-mix: black;
-    --h-orange: #f28a52;
-    --h-amber: #e0aa44;
-    --h-blue: #6aa1f2;
-    --h-pink: #f07aa9;
-    --h-purple: #a98bf0;
-    --h-teal: #4cc3c0;
-    --h-violet: #cf85e6;
-    --h-red: #f07a72;
-    --h-green: #5cc98c;
-    --h-slate: #9aa4b2;
-  }
+/* dark: set on <html> before first paint (index.html) from the system or Beranda's theme toggle */
+:root.dark {
+  color-scheme: dark;
+  --bg: #0f1012;
+  --surface: #1a1b1f;
+  --line: #2a2b30;
+  --text: #ececea;
+  --muted: #9ca1a9;
+  --accent: #4fb89a;
+  --on-accent: #0c1f1a;
+  --in: #5cc98c;
+  --out: #f0715d;
+  --warn: #d99a3a;
+  --on-warn: #1f1405;
+  --on-out: #2b0c06;
+  --field: #6c6d73;
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --shadow: none;
+  --kcard: #232428;
+  --kcard-mix: black;
+  --h-orange: #f28a52;
+  --h-amber: #e0aa44;
+  --h-blue: #6aa1f2;
+  --h-pink: #f07aa9;
+  --h-purple: #a98bf0;
+  --h-teal: #4cc3c0;
+  --h-violet: #cf85e6;
+  --h-red: #f07a72;
+  --h-green: #5cc98c;
+  --h-slate: #9aa4b2;
 }
 
 * {
@@ -204,6 +204,10 @@ dialog.sheet[open]::backdrop {
     max-width: 480px;
     margin: auto;
     border-radius: 16px;
+    /* on desktop the sheet floats: an edge and a lift keep it apart from the dimmed page (dark especially) */
+    box-shadow:
+      0 0 0 1px var(--line),
+      0 24px 48px rgb(0 0 0 / 0.3);
   }
   @starting-style {
     dialog.sheet[open] {

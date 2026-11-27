@@ -25,12 +25,9 @@ func (a *app) applyRule(uid int64, t *Tx) {
 	}
 }
 
-// notify sends a Telegram message for a transaction that came from email, through the account's own bot.
+// notify sends a Telegram message for a transaction that came from email, through each account's own bot:
+// to uid, and to the other members of a kantong bersama it is booked to, saying who recorded it.
 func (a *app) notify(uid int64, t Tx) {
-	token, chat := a.telegramFor(uid)
-	if token == "" || chat == "" {
-		return
-	}
 	verb := map[string]string{"in": "Masuk", "out": "Keluar", "transfer": "Transfer"}[t.Type]
 	text := fmt.Sprintf("%s %s · %s", verb, rupiah(t.Amount), t.Category)
 	if t.Merchant != "" {
@@ -42,11 +39,25 @@ func (a *app) notify(uid int64, t Tx) {
 	if t.NeedsReview {
 		text += " (perlu review)"
 	}
-	go func() {
-		if err := a.sendTelegram(token, chat, text); err != nil {
-			slog.Warn("telegram", "user", uid, "err", err)
+	var by string
+	for _, to := range a.audience(uid, t) {
+		token, chat := a.telegramFor(to)
+		if token == "" || chat == "" {
+			continue
 		}
-	}()
+		msg := text
+		if to != uid {
+			if by == "" {
+				a.db.QueryRow(`SELECT username FROM users WHERE id = ?`, uid).Scan(&by)
+			}
+			msg += " · dicatat " + by
+		}
+		go func() {
+			if err := a.sendTelegram(token, chat, msg); err != nil {
+				slog.Warn("telegram", "user", to, "err", err)
+			}
+		}()
+	}
 }
 
 func rupiah(n int64) string {

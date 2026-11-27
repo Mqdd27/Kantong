@@ -202,6 +202,8 @@ Each person gets their own Kantong account. Their data is fully separate.
 2. Telegram notifications: the person opens **Akun & perangkat** in Kantong and enters their chat ID (from @userinfobot), which uses the server's bot. Optionally they paste their own bot token instead.
 3. Their bank email, receipts and chat through Hermes: one Hermes profile per person, routed from the same bot by Telegram user ID. Follow `docs/hermes-email.md` section 8. Add the `profile_routes` entry **before** adding them to `TELEGRAM_ALLOWED_USERS`; an unrouted sender lands in the first account's profile.
 
+4. Kantong bersama (a wallet several accounts share): members manage it in the app under **Aset → Bersama**. To let the owner do it from chat as well, copy the skill into the default profile only: `cp -R hermes/kantong-shared ~/.hermes/skills/`. Bank emails count toward a kantong when their account name is the kantong's exact name.
+
 Limits to tell the human:
 - Chat AI in the web app is for the first account only.
 - Backup is one file for all accounts, so restoring brings back everyone's data at once.

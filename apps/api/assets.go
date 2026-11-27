@@ -28,10 +28,12 @@ type Asset struct {
 	DueDay     *int     `json:"due_day"`     // debts: day of month the bill is due
 	UpdatedAt  string   `json:"updated_at"`
 	// computed for responses
-	Rate     float64 `json:"rate"`               // IDR per unit of Currency
-	ValueIDR int64   `json:"value_idr"`          // Balance converted to IDR
-	DueDate  string  `json:"due_date,omitempty"` // next due date (YYYY-MM-DD)
-	Overdue  bool    `json:"overdue,omitempty"`  // last due date passed, still owing, no payment since the one before
+	Rate     float64 `json:"rate"`                // IDR per unit of Currency
+	ValueIDR int64   `json:"value_idr"`           // Balance converted to IDR
+	DueDate  string  `json:"due_date,omitempty"`  // next due date (YYYY-MM-DD)
+	Overdue  bool    `json:"overdue,omitempty"`   // last due date passed, still owing, no payment since the one before
+	SharedID int64   `json:"shared_id,omitempty"` // kantong bersama this asset is, 0 = personal
+	uid      int64   // holder: the owner, or for a kantong bersama its creator (or who took over)
 }
 
 type Order struct {
@@ -55,12 +57,45 @@ var assetKinds = map[string]bool{"bank": true, "ewallet": true, "forex": true, "
 // booked to the account makes it more negative and a transfer into it (a payment) pays it down.
 var liabilityKinds = map[string]bool{"credit_card": true, "paylater": true, "loan": true}
 
-const assetCols = `id, name, kind, currency, balance, invested, note, target, target_date, return_pct, maturity, payout, face, due_day, updated_at`
+const assetCols = `id, name, kind, currency, balance, invested, note, target, target_date, return_pct, maturity, payout, face, due_day, updated_at,
+	user_id, COALESCE((SELECT s.id FROM shared_assets s WHERE s.asset_id = assets.id), 0)`
+
+// assetScope limits assets to the caller's own plus the kantong bersama they belong to. Arg: @uid.
+const assetScope = `(user_id = @uid OR id IN (SELECT s.asset_id FROM shared_assets s JOIN shared_members m ON m.shared_id = s.id WHERE m.user_id = @uid))`
 
 func scanAsset(s scanner) (Asset, error) {
 	var x Asset
-	err := s.Scan(&x.ID, &x.Name, &x.Kind, &x.Currency, &x.Balance, &x.Invested, &x.Note, &x.Target, &x.TargetDate, &x.ReturnPct, &x.Maturity, &x.Payout, &x.Face, &x.DueDay, &x.UpdatedAt)
+	err := s.Scan(&x.ID, &x.Name, &x.Kind, &x.Currency, &x.Balance, &x.Invested, &x.Note, &x.Target, &x.TargetDate, &x.ReturnPct, &x.Maturity, &x.Payout, &x.Face, &x.DueDay, &x.UpdatedAt,
+		&x.uid, &x.SharedID)
 	return x, err
+}
+
+// canAccessAsset loads an asset the caller owns or shares; sql.ErrNoRows (answer 404) for anyone else,
+// so a kantong's existence doesn't leak. Every member may read and write it.
+func (a *app) canAccessAsset(uid, id int64) (Asset, error) {
+	return scanAsset(a.db.QueryRow(`SELECT `+assetCols+` FROM assets WHERE id = @id AND `+assetScope, sql.Named("id", id), sql.Named("uid", uid)))
+}
+
+// nameTaken reports whether any of uids already sees an asset called name (own or kantong bersama,
+// ignoring case: balances match account names that way), other than asset except.
+func (a *app) nameTaken(name string, except int64, uids ...int64) (bool, error) {
+	for _, uid := range uids {
+		var taken bool
+		if err := a.db.QueryRow(`SELECT EXISTS (SELECT 1 FROM assets WHERE lower(name) = lower(@name) AND id != @except AND `+assetScope+`)`,
+			sql.Named("name", strings.TrimSpace(name)), sql.Named("except", except), sql.Named("uid", uid)).Scan(&taken); err != nil || taken {
+			return taken, err
+		}
+	}
+	return false, nil
+}
+
+// assetTxScope matches the transactions that move an asset's balance: the holder's own booked to its
+// name, or for a kantong bersama every member's (kantong_tx). Args from assetTxArgs.
+const assetTxScope = `(CASE WHEN @shared = 0 THEN user_id = @holder AND (lower(trim(account)) = @name OR lower(to_account) = @name)
+	ELSE id IN (SELECT tx_id FROM kantong_tx WHERE shared_id = @shared) END)`
+
+func assetTxArgs(x Asset, more ...any) []any {
+	return append([]any{sql.Named("name", strings.ToLower(strings.TrimSpace(x.Name))), sql.Named("holder", x.uid), sql.Named("shared", x.SharedID)}, more...)
 }
 
 const orderCols = `o.id, o.asset_id, a.name, o.side, o.amount, o.status, o.order_ref, o.source_ref, o.note, o.occurred_at`
@@ -122,7 +157,7 @@ type portfolio struct {
 // portfolio values every asset in IDR and records today's snapshot for the performance chart.
 func (a *app) portfolio(ctx context.Context, uid int64) (p portfolio, err error) {
 	p.Assets, p.Pending, p.MissingRates = []Asset{}, []Order{}, []string{}
-	rows, err := a.db.QueryContext(ctx, `SELECT `+assetCols+` FROM assets WHERE user_id = ? ORDER BY kind, name`, uid)
+	rows, err := a.db.QueryContext(ctx, `SELECT `+assetCols+` FROM assets WHERE `+assetScope+` ORDER BY kind, name`, sql.Named("uid", uid))
 	if err != nil {
 		return p, err
 	}
@@ -138,11 +173,11 @@ func (a *app) portfolio(ctx context.Context, uid int64) (p portfolio, err error)
 
 	for i := range p.Assets {
 		x := &p.Assets[i]
-		if x.Balance, err = a.liveBalance(ctx, uid, *x); err != nil {
+		if x.Balance, err = a.liveBalance(ctx, *x); err != nil {
 			return p, err
 		}
 		if x.DueDay != nil && liabilityKinds[x.Kind] {
-			if err = a.dueStatus(ctx, uid, x, time.Now().In(wib)); err != nil {
+			if err = a.dueStatus(ctx, x, time.Now().In(wib)); err != nil {
 				return p, err
 			}
 		}
@@ -242,6 +277,10 @@ func (a *app) createAsset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	uid := userID(r)
+	if taken, err := a.nameTaken(x.Name, 0, uid); err != nil || taken {
+		a.nameConflict(w, err)
+		return
+	}
 	res, err := a.db.Exec(`INSERT INTO assets (user_id, name, kind, currency, balance, invested, note, target, target_date, return_pct, maturity, payout, face, due_day) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		uid, x.Name, x.Kind, x.Currency, x.Balance, x.Invested, x.Note, x.Target, x.TargetDate, x.ReturnPct, x.Maturity, x.Payout, x.Face, x.DueDay)
 	if err != nil {
@@ -263,7 +302,7 @@ func (a *app) patchAsset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	uid := userID(r)
-	x, err := scanAsset(a.db.QueryRow(`SELECT `+assetCols+` FROM assets WHERE id = ? AND user_id = ?`, id, uid))
+	x, err := a.canAccessAsset(uid, id)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeErr(w, http.StatusNotFound, "not found")
 		return
@@ -271,20 +310,30 @@ func (a *app) patchAsset(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, err)
 		return
 	}
-	if x.Balance, err = a.liveBalance(r.Context(), uid, x); err != nil { // the save becomes the new anchor
+	if x.Balance, err = a.liveBalance(r.Context(), x); err != nil { // the save becomes the new anchor
 		a.fail(w, err)
 		return
 	}
-	tracked := x.Balance
+	tracked, name := x.Balance, x.Name
 	// Decoding onto the current row means omitted fields keep their value.
 	if !decode(w, r, &x) || !validAsset(w, &x) {
 		return
 	}
+	if !strings.EqualFold(x.Name, name) {
+		users := []int64{x.uid}
+		if x.SharedID != 0 {
+			users = a.members(x.SharedID)
+		}
+		if taken, err := a.nameTaken(x.Name, id, users...); err != nil || taken {
+			a.nameConflict(w, err)
+			return
+		}
+	}
 	now := time.Now().UTC().Truncate(time.Second)
 	x.UpdatedAt = now.Format(time.RFC3339)
 	_, err = a.db.Exec(`UPDATE assets SET name = ?, kind = ?, currency = ?, balance = ?, invested = ?, note = ?, target = ?, target_date = ?,
-		return_pct = ?, maturity = ?, payout = ?, face = ?, due_day = ?, updated_at = ? WHERE id = ? AND user_id = ?`,
-		x.Name, x.Kind, x.Currency, x.Balance, x.Invested, x.Note, x.Target, x.TargetDate, x.ReturnPct, x.Maturity, x.Payout, x.Face, x.DueDay, x.UpdatedAt, id, uid)
+		return_pct = ?, maturity = ?, payout = ?, face = ?, due_day = ?, updated_at = ? WHERE id = ?`,
+		x.Name, x.Kind, x.Currency, x.Balance, x.Invested, x.Note, x.Target, x.TargetDate, x.ReturnPct, x.Maturity, x.Payout, x.Face, x.DueDay, x.UpdatedAt, id)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
 			writeErr(w, http.StatusConflict, "asset name already exists")
@@ -294,11 +343,11 @@ func (a *app) patchAsset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	x.ID = id
-	if err := a.adjust(uid, x, tracked, now); err != nil {
+	if err := a.adjust(uid, x, tracked, now); err != nil { // entered by whoever saved it
 		a.fail(w, err)
 		return
 	}
-	a.assetsChanged(uid)
+	a.assetChanged(x)
 	writeJSON(w, http.StatusOK, x)
 }
 
@@ -326,9 +375,8 @@ func (a *app) assetActivity(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var name string
-	uid := userID(r)
-	if err := a.db.QueryRow(`SELECT name FROM assets WHERE id = ? AND user_id = ?`, id, uid).Scan(&name); errors.Is(err, sql.ErrNoRows) {
+	x, err := a.canAccessAsset(userID(r), id)
+	if errors.Is(err, sql.ErrNoRows) {
 		writeErr(w, http.StatusNotFound, "not found")
 		return
 	} else if err != nil {
@@ -340,8 +388,8 @@ func (a *app) assetActivity(w http.ResponseWriter, r *http.Request) {
 		Orders       []Order `json:"orders"`
 	}{[]Tx{}, []Order{}}
 	// ponytail: last 200 only, add paging when an account outgrows it
-	rows, err := a.db.Query(`SELECT `+txCols+` FROM transactions WHERE user_id = ?2 AND (lower(trim(account)) = lower(?1) OR lower(to_account) = lower(?1))
-		ORDER BY occurred_at DESC, id DESC LIMIT 200`, strings.TrimSpace(name), uid)
+	rows, err := a.db.Query(`SELECT `+txCols+` FROM transactions WHERE `+assetTxScope+`
+		ORDER BY occurred_at DESC, id DESC LIMIT 200`, assetTxArgs(x)...)
 	if err != nil {
 		a.fail(w, err)
 		return
@@ -379,13 +427,20 @@ func (a *app) deleteAsset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	uid := userID(r)
-	res, err := a.db.Exec(`DELETE FROM assets WHERE id = ? AND user_id = ?`, id, uid)
-	if err != nil {
+	x, err := a.canAccessAsset(uid, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		writeErr(w, http.StatusNotFound, "not found")
+		return
+	} else if err != nil {
 		a.fail(w, err)
 		return
 	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		writeErr(w, http.StatusNotFound, "not found")
+	if x.SharedID != 0 {
+		writeErr(w, http.StatusConflict, "this is a kantong bersama: its creator deletes it with DELETE /api/shared/{id}")
+		return
+	}
+	if _, err := a.db.Exec(`DELETE FROM assets WHERE id = ? AND user_id = ?`, id, uid); err != nil {
+		a.fail(w, err)
 		return
 	}
 	a.assetsChanged(uid)
@@ -401,7 +456,7 @@ func dueOn(now time.Time, day, months int) time.Time {
 
 // dueStatus sets the next due date of a debt and whether the last one was missed:
 // it has passed, the account still owes, and nothing was paid into it since the due date before.
-func (a *app) dueStatus(ctx context.Context, uid int64, x *Asset, now time.Time) error {
+func (a *app) dueStatus(ctx context.Context, x *Asset, now time.Time) error {
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, wib)
 	due := dueOn(now, *x.DueDay, 0)
 	if !today.After(due) {
@@ -413,8 +468,8 @@ func (a *app) dueStatus(ctx context.Context, uid int64, x *Asset, now time.Time)
 		return nil
 	}
 	var paid int
-	err := a.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM transactions WHERE user_id = ? AND type = 'transfer' AND lower(to_account) = lower(?)
-		AND needs_review = 0 AND substr(occurred_at, 1, 10) > ?`, uid, strings.TrimSpace(x.Name), dueOn(now, *x.DueDay, -1).Format(time.DateOnly)).Scan(&paid)
+	err := a.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM transactions WHERE `+assetTxScope+` AND type = 'transfer' AND lower(to_account) = @name
+		AND needs_review = 0 AND substr(occurred_at, 1, 10) > @since`, assetTxArgs(*x, sql.Named("since", dueOn(now, *x.DueDay, -1).Format(time.DateOnly)))...).Scan(&paid)
 	x.Overdue = paid == 0
 	return err
 }
@@ -422,15 +477,16 @@ func (a *app) dueStatus(ctx context.Context, uid int64, x *Asset, now time.Time)
 // liveBalance is the stored balance plus transactions booked to an account of the same name
 // after the balance was last saved, so a bank asset follows spending without manual updates.
 // in adds, out subtracts, a transfer subtracts from account and adds to to_account.
-// Transactions still waiting in Review don't count until approved.
-func (a *app) liveBalance(ctx context.Context, uid int64, x Asset) (float64, error) {
+// Transactions still waiting in Review don't count until approved. For a kantong bersama every
+// member's transactions count once (assetTxScope); this is the one place a balance is computed.
+func (a *app) liveBalance(ctx context.Context, x Asset) (float64, error) {
 	var d float64
 	err := a.db.QueryRowContext(ctx, `SELECT COALESCE(SUM(
-		(CASE WHEN type = 'in' THEN 1 WHEN lower(trim(account)) = ?1 THEN -1 ELSE 0 END
-		 + CASE WHEN type = 'transfer' AND lower(to_account) = ?1 THEN 1 ELSE 0 END)
+		(CASE WHEN type = 'in' THEN 1 WHEN lower(trim(account)) = @name THEN -1 ELSE 0 END
+		 + CASE WHEN type = 'transfer' AND lower(to_account) = @name THEN 1 ELSE 0 END)
 		* CASE WHEN currency = 'IDR' THEN amount ELSE orig_amount END), 0)
-		FROM transactions WHERE user_id = ?4 AND (lower(trim(account)) = ?1 OR lower(to_account) = ?1) AND currency = ?2 AND needs_review = 0
-		AND julianday(occurred_at) > julianday(?3)`, strings.ToLower(strings.TrimSpace(x.Name)), x.Currency, x.UpdatedAt, uid).Scan(&d)
+		FROM transactions WHERE `+assetTxScope+` AND currency = @currency AND needs_review = 0
+		AND julianday(occurred_at) > julianday(@anchor)`, assetTxArgs(x, sql.Named("currency", x.Currency), sql.Named("anchor", x.UpdatedAt))...).Scan(&d)
 	return x.Balance + d, err
 }
 
@@ -509,7 +565,7 @@ func (a *app) createOrder(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 	var assetID int64
-	err = tx.QueryRow(`SELECT id FROM assets WHERE user_id = ? AND name = ? COLLATE NOCASE`, uid, b.Asset).Scan(&assetID)
+	err = tx.QueryRow(`SELECT id FROM assets WHERE `+assetScope+` AND name = @name COLLATE NOCASE`, sql.Named("uid", uid), sql.Named("name", b.Asset)).Scan(&assetID)
 	if errors.Is(err, sql.ErrNoRows) {
 		x := Asset{Name: b.Asset, Kind: b.Kind, Currency: b.Currency}
 		if !validAsset(w, &x) {

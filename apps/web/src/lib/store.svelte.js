@@ -11,6 +11,28 @@ export function toggleHide() {
   try { localStorage.hide = view.hide ? '1' : '' } catch {}
 }
 export const mask = (str) => (view.hide ? '••••••' : str)
+
+// light/dark: follows the system until the toggle picks the other one; picking the system's own value follows it again
+const sysDark = typeof matchMedia === 'function' ? matchMedia('(prefers-color-scheme: dark)') : null
+export const theme = $state({ dark: typeof document === 'object' && document.documentElement.classList.contains('dark') })
+function applyTheme(dark) {
+  theme.dark = dark
+  document.documentElement.classList.toggle('dark', dark)
+  document.querySelector('meta[name=theme-color]')?.setAttribute('content', dark ? '#111214' : '#f6f6f4')
+}
+export function toggleTheme() {
+  const dark = !theme.dark
+  try {
+    if (dark === sysDark?.matches) delete localStorage.theme
+    else localStorage.theme = dark ? 'dark' : 'light'
+  } catch {}
+  applyTheme(dark)
+}
+sysDark?.addEventListener('change', (e) => {
+  let stored
+  try { stored = localStorage.theme } catch {}
+  if (!stored) applyTheme(e.matches)
+})
 export const fmtIDR = { format: (n) => mask(idr.format(n)) }
 export const fmtNum = new Intl.NumberFormat('id-ID')
 export const fmtDay = new Intl.DateTimeFormat('id-ID', { weekday: 'long', day: 'numeric', month: 'long', timeZone: TZ })
@@ -35,6 +57,7 @@ export const s = $state({
   error: '',
   portfolio: { assets: [], total_idr: 0, pending_orders: [], missing_rates: [] },
   history: [],
+  shared: [], // kantong bersama the account belongs to, with members (GET /api/shared)
   budget: null,
   recurring: [],
   chat: false, // AI assistant: on only when the server has HERMES_API_URL
@@ -70,7 +93,7 @@ function remove(id) {
 function signedOut() {
   es?.close()
   clearTimeout(retry)
-  Object.assign(s, { authed: false, live: false, txs: [], categories: [], history: [], budget: null, recurring: [], chat: false,
+  Object.assign(s, { authed: false, live: false, txs: [], categories: [], history: [], shared: [], budget: null, recurring: [], chat: false,
     portfolio: { assets: [], total_idr: 0, pending_orders: [], missing_rates: [] } })
 }
 
@@ -176,6 +199,7 @@ export function connect() {
   es.addEventListener('assets.changed', loadAssets)
   es.addEventListener('budget.changed', budgetSoon)
   es.addEventListener('categories.changed', loadCategories)
+  es.addEventListener('transactions.changed', () => load()) // a kantong bersama and its transactions were deleted
   // asset balances follow transactions on their account, so refresh them too once loaded
   const txChanged = () => { budgetSoon(); if (s.portfolio.assets.length) loadAssets() }
   for (const ev of ['transaction.created', 'transaction.updated', 'transaction.deleted']) es.addEventListener(ev, txChanged)
@@ -294,6 +318,7 @@ export async function loadAssets() {
   try {
     s.portfolio = await api('/assets') // also records today's snapshot
     s.history = await api('/assets/history')
+    s.shared = await api('/shared')
   } catch (e) {
     fail(e)
   }

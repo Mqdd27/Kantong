@@ -6,7 +6,7 @@
   import Icon from './Icon.svelte'
   import { kindLook } from './lib/look.js'
   import { api } from './lib/api.js'
-  import { s, fmtIDR, fmtCur, fmtShort, loadAssets, CURRENCIES, saveAsset, deleteAsset } from './lib/store.svelte.js'
+  import { s, fmtIDR, fmtCur, fmtShort, loadAssets, CURRENCIES, saveAsset, deleteAsset, act as run } from './lib/store.svelte.js'
 
   const KINDS = {
     bank: 'Bank', ewallet: 'E-wallet', forex: 'Valas', cash: 'Tunai', stock: 'Saham', bond: 'Obligasi',
@@ -24,16 +24,42 @@
 
   onMount(loadAssets)
 
-  const groups = $derived.by(() => {
+  function byKind(list) {
     const m = new Map()
-    for (const a of s.portfolio.assets) {
+    for (const a of list) {
       const g = m.get(a.kind) ?? { kind: a.kind, total: 0, items: [] }
       g.total += a.value_idr || 0
       g.items.push(a)
       m.set(a.kind, g)
     }
     return [...m.values()].sort((a, b) => b.total - a.total)
-  })
+  }
+  // the hero counts everything once (kantong bersama included); the lists keep kantong bersama apart
+  const groups = $derived(byKind(s.portfolio.assets))
+  const own = $derived(byKind(s.portfolio.assets.filter((a) => !a.shared_id)))
+  const together = $derived(s.portfolio.assets.filter((a) => a.shared_id))
+
+  // kantong bersama of the open asset, and who recorded a transaction in it
+  const kantong = $derived(edit?.shared_id && s.shared.find((k) => k.id === edit.shared_id))
+  const who = (tx) => kantong?.members.find((m) => m.user_id === tx.created_by)?.username ?? ''
+  let invite = $state('')
+  let confirmName = $state('')
+  async function share() {
+    if (await run('/shared', 'POST', { asset_id: edit.id })) dialog.close()
+  }
+  async function addMember(e) {
+    e.preventDefault()
+    if (await run(`/shared/${kantong.id}/members`, 'POST', { username: invite.trim() })) invite = ''
+  }
+  async function dropMember(m) {
+    if (confirm(`Keluarkan ${m.username} dari ${kantong.name}? Transaksi yang sudah dia catat tetap di kantong.`)) await run(`/shared/${kantong.id}/members/${m.user_id}`, 'DELETE')
+  }
+  async function leave() {
+    if (confirm(`Keluar dari ${kantong.name}? Transaksi yang sudah kamu catat tetap di kantong.`) && (await run(`/shared/${kantong.id}/leave`, 'POST'))) dialog.close()
+  }
+  async function dropKantong() {
+    if (await run(`/shared/${kantong.id}`, 'DELETE', { confirm: confirmName })) dialog.close()
+  }
   const gross = $derived(groups.reduce((n, g) => n + Math.max(g.total, 0), 0))
   const debt = $derived(groups.reduce((n, g) => n + (DEBT.has(g.kind) ? -g.total : 0), 0))
 
@@ -49,6 +75,7 @@
       ? { ...a, balance: DEBT.has(a.kind) ? -a.balance : a.balance, invested: a.invested ?? '', target: a.target ?? '', target_date: a.target_date ?? '', return_pct: a.return_pct ?? '', maturity: a.maturity ?? '', face: a.face ?? '', due_day: a.due_day ?? '' }
       : { name: '', kind: 'bank', currency: 'IDR', balance: '', invested: '', note: '', target: '', target_date: '', return_pct: '', maturity: '', payout: 0, face: '', due_day: '' }
     edit = a ?? {}
+    invite = confirmName = ''
     // cash-like accounts open on their history, investments on the edit form
     tab = a && CASHLIKE.has(a.kind) ? 'history' : 'edit'
     act = null
@@ -178,12 +205,7 @@
   </section>
 {/if}
 
-<div class="groups">
-{#each groups as g}
-  {@const look = kindLook(g.kind)}
-  <section class="card list group">
-  <h3><span>{KINDS[g.kind]}</span><span class="num" class:out={g.total < 0}>{fmtIDR.format(g.total)}</span></h3>
-  {#each g.items as a}
+{#snippet row(a, look)}
     <button class="row" onclick={() => openEdit(a)}>
       <span class="avatar" style:--hue={look.hue}><Icon name={look.icon} /></span>
       <span class="main">
@@ -216,6 +238,24 @@
         {/if}
       </span>
     </button>
+{/snippet}
+
+{#if together.length}
+  <div class="sec"><h2>Kantong bersama</h2></div>
+  <section class="card list group together">
+  {#each together as a}
+    {@render row(a, kindLook(a.kind))}
+  {/each}
+  </section>
+{/if}
+
+<div class="groups">
+{#each own as g}
+  {@const look = kindLook(g.kind)}
+  <section class="card list group">
+  <h3><span>{KINDS[g.kind]}</span><span class="num" class:out={g.total < 0}>{fmtIDR.format(g.total)}</span></h3>
+  {#each g.items as a}
+    {@render row(a, look)}
   {/each}
   </section>
 {:else}
@@ -228,9 +268,10 @@
 {#if edit}
   <dialog class="sheet" bind:this={dialog} onclose={() => (edit = null)} onclick={(e) => e.target === dialog && dialog.close()}>
     {#if edit.id}
-      <div class="tabs seg">
+      <div class="tabs" role="group" aria-label="Bagian aset">
         <button type="button" aria-pressed={tab === 'history'} onclick={() => (tab = 'history')}>Riwayat</button>
         <button type="button" aria-pressed={tab === 'edit'} onclick={() => (tab = 'edit')}>Edit</button>
+        <button type="button" aria-pressed={tab === 'shared'} onclick={() => (tab = 'shared')}>Bersama</button>
       </div>
     {/if}
     {#if tab === 'history'}
@@ -247,13 +288,63 @@
             </div>
           {/each}
           {#each act.transactions as tx (tx.id)}
-            <TxRow {tx} showDate account={edit.name} />
+            <TxRow {tx} showDate account={edit.name} by={who(tx)} />
           {/each}
           {#if !act.transactions.length && !act.orders.length}
             <p class="muted">Belum ada transaksi dengan akun “{edit.name}”. Isi kolom Akun saat mencatat transaksi.</p>
           {/if}
         {/if}
         <div class="actions"><button type="button" onclick={() => dialog.close()}>Tutup</button></div>
+      </section>
+    {:else if tab === 'shared'}
+      <section class="hist shared">
+        <h2>{edit.name}</h2>
+        {#if !edit.shared_id}
+          <p class="muted small">Jadikan kantong bersama supaya orang lain bisa ikut mencatat dan melihat saldonya. Semua anggota bisa mengubah transaksi dan saldo; saldonya masuk sekali ke total tiap anggota.</p>
+          <div class="actions"><button type="button" onclick={() => dialog.close()}>Batal</button><button type="button" class="primary" onclick={share}>Jadikan kantong bersama</button></div>
+        {:else if kantong}
+          <p class="muted small">Transaksi dengan akun “{edit.name}” dari semua anggota masuk ke kantong ini.</p>
+          <div class="people">
+            <div class="phead">Anggota<span>{kantong.members.length}</span></div>
+            {#each kantong.members as m (m.user_id)}
+              <div class="person">
+                <span class="avatar sm" aria-hidden="true">{m.username[0].toUpperCase()}</span>
+                <span class="who"><b>{m.username}</b><small>sejak {fmtShort.format(new Date(m.joined_at))}</small></span>
+                {#if m.role === 'owner'}
+                  <span class="badge">Pembuat</span>
+                {:else if kantong.role === 'owner'}
+                  <button type="button" class="kick" onclick={() => dropMember(m)}>Keluarkan</button>
+                {/if}
+              </div>
+            {/each}
+            {#if kantong.role === 'owner'}
+              <form class="invite" onsubmit={addMember}>
+                <input bind:value={invite} required placeholder="Undang dengan username" aria-label="Username yang diundang" autocapitalize="off" autocomplete="off" />
+                <button class="primary">Undang</button>
+              </form>
+            {/if}
+          </div>
+          {#if kantong.role === 'owner'}
+            <div class="zone">
+              <b>Hapus kantong</b>
+              <p class="muted small">Semua transaksinya ikut terhapus untuk semua anggota dan tidak bisa dikembalikan.</p>
+              <label>Ketik “{kantong.name}” untuk konfirmasi <input bind:value={confirmName} autocapitalize="off" autocomplete="off" /></label>
+            </div>
+            <div class="actions">
+              <button type="button" class="danger" disabled={confirmName !== kantong.name} onclick={dropKantong}>Hapus kantong</button>
+              <button type="button" onclick={() => dialog.close()}>Tutup</button>
+            </div>
+          {:else}
+            <div class="zone">
+              <b>Keluar dari kantong</b>
+              <p class="muted small">Kantong ini hilang dari daftarmu. Transaksi yang sudah kamu catat tetap di kantong.</p>
+            </div>
+            <div class="actions">
+              <button type="button" class="danger" onclick={leave}>Keluar dari kantong</button>
+              <button type="button" onclick={() => dialog.close()}>Tutup</button>
+            </div>
+          {/if}
+        {/if}
       </section>
     {:else}
     <form onsubmit={save}>
@@ -331,7 +422,7 @@
       {/if}
       <label>Catatan <input bind:value={f.note} /></label>
       <div class="actions">
-        {#if edit.id}<button type="button" class="danger" onclick={del}>Hapus</button>{/if}
+        {#if edit.id && !edit.shared_id}<button type="button" class="danger" onclick={del}>Hapus</button>{/if}
         <button type="button" onclick={() => dialog.close()}>Batal</button>
         <button class="primary">Simpan</button>
       </div>
@@ -459,8 +550,101 @@
   h3 .num {
     color: var(--text);
   }
-  .pending {
+  .pending,
+  .together {
     margin-bottom: 4px;
+  }
+  /* Bersama tab: members in one contained list, compact controls */
+  .people {
+    margin-top: 12px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--surface);
+    overflow: hidden;
+  }
+  .phead {
+    display: flex;
+    justify-content: space-between;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--line);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--muted);
+  }
+  .person {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--line);
+  }
+  .person:last-child {
+    border-bottom: 0;
+  }
+  .person .avatar {
+    --hue: var(--accent);
+    font-size: 14px;
+    font-weight: 650;
+  }
+  .who {
+    flex: 1;
+    min-width: 0;
+    display: grid;
+  }
+  .who b {
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .who small {
+    color: var(--muted);
+  }
+  .badge {
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+  }
+  .kick {
+    padding: 4px 8px;
+    border: 0;
+    border-radius: 8px;
+    background: none;
+    color: var(--out);
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .kick:hover {
+    background: color-mix(in srgb, var(--out) 10%, transparent);
+  }
+  .invite {
+    display: flex;
+    gap: 8px;
+    padding: 10px 12px;
+  }
+  .invite input {
+    flex: 1;
+    min-width: 0;
+    padding: 6px 10px;
+  }
+  .shared .actions button,
+  .invite button {
+    padding: 7px 14px;
+    font-size: 14px;
+    border-radius: 10px;
+  }
+  .zone {
+    display: grid;
+    gap: 4px;
+    margin: 20px 0 12px;
+  }
+  .zone b {
+    font-size: 14px;
+  }
+  .zone .small {
+    margin: 0 0 4px;
   }
   .name {
     font-weight: 600;
@@ -523,8 +707,30 @@
     color: var(--accent);
     font-weight: 600;
   }
+  /* one segmented track; the open tab is a raised pill */
   .tabs {
-    padding: 16px 16px 0;
+    display: flex;
+    gap: 2px;
+    margin: 16px 16px 0;
+    padding: 3px;
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--text) 7%, transparent);
+  }
+  .tabs button {
+    flex: 1;
+    padding: 6px 0;
+    border: 0;
+    border-radius: 8px;
+    background: none;
+    color: var(--muted);
+    font-size: 14px;
+    font-weight: 500;
+  }
+  .tabs [aria-pressed='true'] {
+    background: var(--surface);
+    color: var(--text);
+    font-weight: 600;
+    box-shadow: 0 1px 3px rgb(0 0 0 / 0.14);
   }
   .hist {
     padding: 16px 16px calc(env(safe-area-inset-bottom) + 16px);

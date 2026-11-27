@@ -3,8 +3,8 @@
   import { catLook } from './lib/look.js'
   import Icon from './Icon.svelte'
 
-  /** account: show a transfer as − (out of it) or + (into it) from that account's view */
-  let { tx, onclick, showDate = false, account = '' } = $props()
+  /** account: show a transfer as − (out of it) or + (into it) from that account's view; by: who recorded it */
+  let { tx, onclick, showDate = false, account = '', by = '' } = $props()
   const fresh = $derived(isFresh(tx.id))
   const look = $derived(catLook(tx.type === 'transfer' ? 'Transfer' : tx.category))
   // "2/3" for a part of a split payment
@@ -24,7 +24,7 @@
   <span class="main">
     <span class="merchant">{tx.merchant || tx.category}</span>
     <span class="meta">
-      {tx.category} · {(showDate ? fmtShort : fmtTime).format(new Date(tx.occurred_at))}{tx.account ? ' · ' + tx.account : ''}{tx.to_account ? ' → ' + tx.to_account : ''}{part ? ' · ' + part : ''}
+      {tx.category} · {(showDate ? fmtShort : fmtTime).format(new Date(tx.occurred_at))}{tx.account ? ' · ' + tx.account : ''}{tx.to_account ? ' → ' + tx.to_account : ''}{part ? ' · ' + part : ''}{by ? ' · oleh ' + by : ''}
     </span>
     {#if tx.needs_review}<span class="badge">Perlu review</span>{/if}
   </span>
