@@ -268,7 +268,7 @@
 {#if edit}
   <dialog class="sheet" bind:this={dialog} onclose={() => (edit = null)} onclick={(e) => e.target === dialog && dialog.close()}>
     {#if edit.id}
-      <div class="tabs seg">
+      <div class="tabs" role="group" aria-label="Bagian aset">
         <button type="button" aria-pressed={tab === 'history'} onclick={() => (tab = 'history')}>Riwayat</button>
         <button type="button" aria-pressed={tab === 'edit'} onclick={() => (tab = 'edit')}>Edit</button>
         <button type="button" aria-pressed={tab === 'shared'} onclick={() => (tab = 'shared')}>Bersama</button>
@@ -297,26 +297,34 @@
         <div class="actions"><button type="button" onclick={() => dialog.close()}>Tutup</button></div>
       </section>
     {:else if tab === 'shared'}
-      <section class="hist">
+      <section class="hist shared">
         <h2>{edit.name}</h2>
         {#if !edit.shared_id}
           <p class="muted small">Jadikan kantong bersama supaya orang lain bisa ikut mencatat dan melihat saldonya. Semua anggota bisa mengubah transaksi dan saldo; saldonya masuk sekali ke total tiap anggota.</p>
           <div class="actions"><button type="button" onclick={() => dialog.close()}>Batal</button><button type="button" class="primary" onclick={share}>Jadikan kantong bersama</button></div>
         {:else if kantong}
           <p class="muted small">Transaksi dengan akun “{edit.name}” dari semua anggota masuk ke kantong ini.</p>
-          <h3>Anggota <span class="num">{kantong.members.length}</span></h3>
-          {#each kantong.members as m (m.user_id)}
-            <div class="order member">
-              <span class="avatar sm">{m.username[0].toUpperCase()}</span>
-              <span class="who">{m.username}<small>{m.role === 'owner' ? 'Pembuat' : 'Anggota'} · sejak {fmtShort.format(new Date(m.joined_at))}</small></span>
-              {#if kantong.role === 'owner' && m.role !== 'owner'}<button type="button" class="mini" onclick={() => dropMember(m)}>Keluarkan</button>{/if}
-            </div>
-          {/each}
+          <div class="people">
+            <div class="phead">Anggota<span>{kantong.members.length}</span></div>
+            {#each kantong.members as m (m.user_id)}
+              <div class="person">
+                <span class="avatar sm" aria-hidden="true">{m.username[0].toUpperCase()}</span>
+                <span class="who"><b>{m.username}</b><small>sejak {fmtShort.format(new Date(m.joined_at))}</small></span>
+                {#if m.role === 'owner'}
+                  <span class="badge">Pembuat</span>
+                {:else if kantong.role === 'owner'}
+                  <button type="button" class="kick" onclick={() => dropMember(m)}>Keluarkan</button>
+                {/if}
+              </div>
+            {/each}
+            {#if kantong.role === 'owner'}
+              <form class="invite" onsubmit={addMember}>
+                <input bind:value={invite} required placeholder="Undang dengan username" aria-label="Username yang diundang" autocapitalize="off" autocomplete="off" />
+                <button class="primary">Undang</button>
+              </form>
+            {/if}
+          </div>
           {#if kantong.role === 'owner'}
-            <form class="inline" onsubmit={addMember}>
-              <input bind:value={invite} required placeholder="Username" aria-label="Username yang diundang" autocapitalize="off" autocomplete="off" />
-              <button class="primary">Undang</button>
-            </form>
             <div class="zone">
               <b>Hapus kantong</b>
               <p class="muted small">Semua transaksinya ikut terhapus untuk semua anggota dan tidak bisa dikembalikan.</p>
@@ -546,40 +554,94 @@
   .together {
     margin-bottom: 4px;
   }
-  .inline {
+  /* Bersama tab: members in one contained list, compact controls */
+  .people {
+    margin-top: 12px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--surface);
+    overflow: hidden;
+  }
+  .phead {
     display: flex;
-    gap: 8px;
-    margin: 12px 0 0;
+    justify-content: space-between;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--line);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--muted);
   }
-  .inline input {
-    flex: 1;
-    min-width: 0;
+  .person {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--line);
   }
-  .member {
-    justify-content: flex-start;
-    gap: 12px;
+  .person:last-child {
+    border-bottom: 0;
   }
-  .member .avatar {
+  .person .avatar {
     --hue: var(--accent);
+    font-size: 14px;
     font-weight: 650;
   }
   .who {
     flex: 1;
     min-width: 0;
+    display: grid;
   }
-  /* row action: compact, red text, stays at the row's end */
-  .mini {
-    padding: 6px 12px;
-    font-size: 14px;
+  .who b {
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .who small {
+    color: var(--muted);
+  }
+  .badge {
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+  }
+  .kick {
+    padding: 4px 8px;
+    border: 0;
+    border-radius: 8px;
+    background: none;
     color: var(--out);
+    font-size: 13px;
+    font-weight: 600;
   }
-  /* destructive step, set apart from the everyday controls above it */
+  .kick:hover {
+    background: color-mix(in srgb, var(--out) 10%, transparent);
+  }
+  .invite {
+    display: flex;
+    gap: 8px;
+    padding: 10px 12px;
+  }
+  .invite input {
+    flex: 1;
+    min-width: 0;
+    padding: 6px 10px;
+  }
+  .shared .actions button,
+  .invite button {
+    padding: 7px 14px;
+    font-size: 14px;
+    border-radius: 10px;
+  }
   .zone {
     display: grid;
     gap: 4px;
-    margin: 24px 0 12px;
-    padding-top: 16px;
-    border-top: 1px solid var(--line);
+    margin: 20px 0 12px;
+  }
+  .zone b {
+    font-size: 14px;
   }
   .zone .small {
     margin: 0 0 4px;
@@ -645,8 +707,30 @@
     color: var(--accent);
     font-weight: 600;
   }
+  /* one segmented track; the open tab is a raised pill */
   .tabs {
-    padding: 16px 16px 0;
+    display: flex;
+    gap: 2px;
+    margin: 16px 16px 0;
+    padding: 3px;
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--text) 7%, transparent);
+  }
+  .tabs button {
+    flex: 1;
+    padding: 6px 0;
+    border: 0;
+    border-radius: 8px;
+    background: none;
+    color: var(--muted);
+    font-size: 14px;
+    font-weight: 500;
+  }
+  .tabs [aria-pressed='true'] {
+    background: var(--surface);
+    color: var(--text);
+    font-weight: 600;
+    box-shadow: 0 1px 3px rgb(0 0 0 / 0.14);
   }
   .hist {
     padding: 16px 16px calc(env(safe-area-inset-bottom) + 16px);

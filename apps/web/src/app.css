@@ -204,6 +204,10 @@ dialog.sheet[open]::backdrop {
     max-width: 480px;
     margin: auto;
     border-radius: 16px;
+    /* on desktop the sheet floats: an edge and a lift keep it apart from the dimmed page (dark especially) */
+    box-shadow:
+      0 0 0 1px var(--line),
+      0 24px 48px rgb(0 0 0 / 0.3);
   }
   @starting-style {
     dialog.sheet[open] {
