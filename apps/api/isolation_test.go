@@ -301,11 +301,13 @@ func TestSharedKantong(t *testing.T) {
 		}
 		return
 	}
-	// a minute ahead, so a transaction is after the balance anchor saved in the same second
+	// a balance saved now is the anchor: earlier transactions are in it, later ones move it
+	earlier := time.Now().In(wib).Add(-time.Minute).Format(time.RFC3339)
 	soon := time.Now().In(wib).Add(time.Minute).Format(time.RFC3339)
-	txBody := func(amount int, account, extra string) string {
-		return fmt.Sprintf(`{"amount":%d,"type":"out","category":"Makan","account":%q,"occurred_at":%q,"source":"manual"%s}`, amount, account, soon, extra)
+	txAt := func(at string, amount int, account, extra string) string {
+		return fmt.Sprintf(`{"amount":%d,"type":"out","category":"Makan","account":%q,"occurred_at":%q,"source":"manual"%s}`, amount, account, at, extra)
 	}
+	txBody := func(amount int, account, extra string) string { return txAt(earlier, amount, account, extra) }
 
 	// owner has a personal bank account; budi a personal "Dapur"
 	must("owner", 201, "POST", "/api/assets", `{"name":"BCA","kind":"bank","balance":1000000}`)
@@ -318,6 +320,7 @@ func TestSharedKantong(t *testing.T) {
 	if k.Role != "owner" || k.Name != "Dapur" || k.AssetID == 0 {
 		t.Fatalf("created kantong: %s", raw)
 	}
+	a.db.Exec(`UPDATE assets SET updated_at = '2000-01-01T00:00:00Z' WHERE id = ?`, asset) // the opening balance predates the transactions below
 
 	t.Run("8 name clash with a member's personal asset", func(t *testing.T) {
 		as("owner", 409, "POST", "/api/shared/"+sid+"/members", `{"username":"budi"}`) // budi still has a personal Dapur
@@ -439,7 +442,7 @@ func TestSharedKantong(t *testing.T) {
 
 	t.Run("leaving keeps the member's transactions in the kantong", func(t *testing.T) {
 		must("owner", 201, "POST", "/api/shared/"+sid+"/members", `{"username":"sari"}`)
-		x := id(must("sari", 201, "POST", "/api/transactions", txBody(1000, "Dapur", "")))
+		x := id(must("sari", 201, "POST", "/api/transactions", txAt(soon, 1000, "Dapur", "")))
 		before, _ := balance("owner", asset)
 		must("sari", 204, "POST", "/api/shared/"+sid+"/leave", "")
 		as("sari", 404, "PATCH", "/api/assets/"+asset, `{"note":"x"}`)
@@ -457,8 +460,8 @@ func TestSharedKantong(t *testing.T) {
 	t.Run("4 creator invites, removes and deletes with the right name", func(t *testing.T) {
 		must("owner", 204, "DELETE", "/api/shared/"+sid+"/members/"+fmt.Sprint(uid["budi"]), "")
 		as("budi", 404, "GET", "/api/assets/"+asset+"/activity", "")
-		if b, ok := balance("owner", asset); !ok || b != 393000 {
-			t.Errorf("owner balance after removing budi: %v %v, want 393000", b, ok)
+		if b, ok := balance("owner", asset); !ok || b != 392000 {
+			t.Errorf("owner balance after removing budi: %v %v, want 392000 (400000 - 7000 email - 1000 sari)", b, ok)
 		}
 		as("owner", 400, "DELETE", "/api/shared/"+sid, `{"confirm":"dapur"}`)
 		as("owner", 400, "DELETE", "/api/shared/"+sid, ``)
